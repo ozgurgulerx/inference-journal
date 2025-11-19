@@ -20,7 +20,7 @@ gcloud org-policies describe constraints/compute.vmExternalIpAccess \
   --project=vaulted-blend-456507-a2
 
 gcloud compute instances create oz-t4 \
-  --zone=us-central1-a \
+  --zone=europe-west4-c \
   --machine-type=n1-standard-1 \
   --accelerator=type=nvidia-tesla-t4,count=1 \
   --maintenance-policy=TERMINATE \
