@@ -1,0 +1,2 @@
+cat /etc/os-release
+sudo apt update && sudo apt upgrade -y
