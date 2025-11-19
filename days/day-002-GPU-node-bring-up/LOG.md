@@ -1,4 +1,4 @@
-# Day 001 – Initial Setup and Structure
+# Day 002 – Initial Setup and Structure
 
 ## Goal
 Tier 1 – Must-Do Core Block (~2 hours)
