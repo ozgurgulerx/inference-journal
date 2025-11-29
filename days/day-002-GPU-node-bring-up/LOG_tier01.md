@@ -20,8 +20,8 @@ gcloud org-policies describe constraints/compute.vmExternalIpAccess \
   --project=vaulted-blend-456507-a2
 
 gcloud compute instances create oz-t4 \
-  --zone=europe-west4-c \
-  --machine-type=n1-standard-1 \
+  --zone=us-central1-b \
+  --machine-type=n1-standard-2 \
   --accelerator=type=nvidia-tesla-t4,count=1 \
   --maintenance-policy=TERMINATE \
   --image-family=ubuntu-2204-lts \
@@ -31,9 +31,22 @@ gcloud compute instances create oz-t4 \
   --metadata=install-nvidia-driver=True \
   --no-restart-on-failure
 
+  gcloud compute instances create oz-t4 \
+    --zone=us-central1-b \
+    --machine-type=n1-standard-1 \
+    --accelerator=type=nvidia-tesla-t4,count=1 \
+    --maintenance-policy=TERMINATE \
+    --image-family=ubuntu-2204-lts \
+    --image-project=ubuntu-os-cloud \
+    --boot-disk-size=200GB \
+    --boot-disk-type=pd-balanced \
+    --metadata=install-nvidia-driver=True \
+    --no-restart-on-failure \
+    --provisioning-model=SPOT \
+    --instance-termination-action=STOP
 
 !
-21:56 Lost 1.5 hours to enable external IP's via removing constraints (adding permit all) 
+
 
 
 gcloud compute instances list
