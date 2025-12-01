@@ -37,7 +37,7 @@ Evening (5 min):
 
 ### Tips
 
-- **Be specific in RECENT_LOG** – include commands run, metrics measured, blockers hit
+- **Be specific in RECENT_LOG** – include commands run (`nvidia-smi`, `vllm serve`), metrics measured, blockers hit
 - **Update GOALS_UPDATES** when priorities shift
 - **Tier 1 is non-negotiable** – do it even on busy days
 - **Reading is off-hours only** – don't let theory eat into lab time
@@ -185,8 +185,8 @@ DAY_INDEX: 2
 TIME_AVAIL_TODAY: 3–4h
 
 RECENT_LOG:
-- Day 0: brought up T4 VM on GCP, installed drivers + CUDA; basic vLLM serve with Llama 3.2 1B; simple tokens/sec benchmark
-- Day 1: repeated bring-up on a different cloud; compared HF vs vLLM baseline; started logging metrics to a CSV
+- Day 0: brought up T4 VM on GCP (`gcloud compute instances create`), installed drivers + CUDA (`nvidia-smi`, `nvcc --version`); ran `vllm serve meta-llama/Llama-3.2-1B`; measured tokens/sec
+- Day 1: repeated bring-up on AWS (`aws ec2 run-instances`); compared HF `transformers` vs `vllm` baseline; logged metrics to `benchmarks/day-01.csv`
 
 BUSINESS_UPDATES:
 - Realized "GPU Node Health Check" could be a productized offer; want more OS/observability depth
@@ -222,18 +222,19 @@ GOALS_UPDATES:
 ## Section 4: Troubleshooting
 
 ### Plan feels too generic?
-- Add more detail to RECENT_LOG (specific commands, exact metrics)
-- Include blockers you hit
+- Add more detail to RECENT_LOG (specific commands like `nvidia-smi`, `vllm serve`, exact metrics)
+- Include blockers you hit (e.g., "CUDA OOM at batch_size=32")
 
 ### Plan ignores my roadmap?
-- Explicitly mention which OS-XX or Phase you're on in GOALS_UPDATES
+- Explicitly mention which `[OS-XX]` or `[PhaseX]` you're on in GOALS_UPDATES
 - Reference the roadmap tag you want to focus on
 
 ### Too much theory suggested?
 - Remind: "Remember, max 3 readings, each tied to a specific lab"
+- Add: "Focus on vLLM docs, not general ML theory"
 
 ### Plan doesn't match my time?
-- Be precise: "2h" vs "3-4h" vs "4h+" changes the output significantly
+- Be precise: `2h` vs `3-4h` vs `4h+` changes the output significantly
 
 ---
 
