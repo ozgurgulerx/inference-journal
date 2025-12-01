@@ -1,7 +1,22 @@
 # LLM Inference Mastery Roadmap
 
+> **Start Date**: December 1, 2025  
 > **Target Duration**: 12–18 Months  
+> **Study Time**: 16 hrs/week (12 hrs effective)  
 > **Goal**: Become a recognized LLM inference optimization specialist
+
+---
+
+## Estimated Timeline (Hands-On Focus)
+
+| Phase | Focus | Dates | Duration | Approach |
+|-------|-------|-------|----------|----------|
+| **Phase 0** | OS Foundations | Dec 1 → Jan 5, 2026 | 5 weeks | 90% hands-on |
+| **Phase 1** | vLLM Hacking | Jan 6 → Feb 9, 2026 | 5 weeks | Build & benchmark |
+| **Phase 2** | Quantization Experiments | Feb 10 → Mar 23, 2026 | 6 weeks | Code & profile |
+| **Phase 3** | Optimization Sprints | Mar 24 → May 18, 2026 | 8 weeks | Real workloads |
+| **Phase 4** | Ship & Productize | May 19 → Jun 29, 2026 | 6 weeks | Case studies |
+| **Recognition** | Visibility & Clients | Jun 30, 2026 → Dec 2026 | 6 months | Talks + repos |
 
 ---
 
@@ -9,14 +24,13 @@
 
 - [Success Outcomes](#0-outcomes--what-success-looks-like)
 - [Meta-Routine](#meta-routine-every-week)
-- [Phase 0: OS Foundations](#phase-0--os-foundations-days-120)
-- [Phase 1: Foundations & First Benchmarks](#phase-1-months-13--foundations--first-benchmarks)
-- [Phase 2: Quantization, Kernels & Compilers](#phase-2-months-46--quantization-kernels--compiler-taste)
-- [Phase 3: Consultant-Level Optimization](#phase-3-months-79--consultant-level-optimization-skills)
-- [Phase 4: Productizing](#phase-4-months-1012--productizing-into-a-consulting-offer)
-- [Months 12-18: Recognition](#months-1218--becoming-a-recognized-inference-specialist)
+- [Phase 0: OS Foundations](#phase-0--os-foundations-dec-1--jan-5) (Dec 1 → Jan 5)
+- [Phase 1: vLLM Hacking](#phase-1-jan-6--feb-9--vllm-hacking--benchmarks) (Jan 6 → Feb 9)
+- [Phase 2: Quantization](#phase-2-feb-10--mar-23--quantization--kernel-experiments) (Feb 10 → Mar 23)
+- [Phase 3: Optimization](#phase-3-mar-24--may-18--optimization-sprints) (Mar 24 → May 18)
+- [Phase 4: Ship & Productize](#phase-4-may-19--jun-29--ship--productize) (May 19 → Jun 29)
+- [Recognition Phase](#recognition-phase-jun-30--dec-2026--visibility--clients) (Jun 30 → Dec 2026)
 - [Advanced Mastery Tracks](#advanced-mastery-tracks)
-- [Timeline Adjustment Suggestions](#timeline-adjustment-suggestions)
 
 ---
 
@@ -38,16 +52,18 @@
 
 | Day | Focus | Duration |
 |-----|-------|----------|
-| Mon–Tue | Learning (papers, docs, theory) | 1–1.5 hrs/day |
-| Wed–Thu | Implementation (code, experiments) | 1–1.5 hrs/day |
-| Fri | Profiling / benchmarking / notes | 1–1.5 hrs |
-| Weekend | Ship one artifact (repo, notebook, doc, blog draft) | 3–4 hrs |
+| Mon | Skim docs/code (just enough to unblock) | 1 hr |
+| Tue–Thu | **Hands-on hacking** (code, experiments, profiling) | 2 hrs/day |
+| Fri | Benchmarking & capture results | 1.5 hrs |
+| Weekend | **Ship one artifact** (working code, benchmark, script) | 4–5 hrs |
+
+> **Philosophy**: Learn by doing. Read docs only when stuck. Every session should produce runnable code or measurable results.
 
 ---
 
-## Phase 0 – OS Foundations (Days 1–20)
+## Phase 0 – OS Foundations (Dec 1 → Jan 5)
 
-> **Prerequisite Phase**: Complete before diving into model-specific inference work. This gives you a solid OS baseline for client sessions.
+> **Approach**: SSH into a GPU box and configure it. Learn by breaking things. Every task = a working script or config.
 
 ### OS-01: GPU Node Bring-Up
 - [ ] Install NVIDIA drivers, CUDA, cuDNN, NCCL, and TensorRT
@@ -87,13 +103,12 @@
 
 ---
 
-## Phase 1 (Months 1–3) – Foundations & First Benchmarks
+## Phase 1 (Jan 6 → Feb 9) – vLLM Hacking & Benchmarks
 
-### 1. GPU & Systems Basics
-- [ ] Learn basic GPU architecture: SMs, warps, blocks, threads
-- [ ] Learn memory hierarchy: registers, shared memory, global memory, HBM
-- [ ] Understand compute-bound vs memory-bound workloads
-- [ ] Understand how batch size, sequence length, and model size affect FLOPs and memory
+### 1. GPU Basics (Learn While Doing)
+- [ ] Run `nvidia-smi dmon` while serving – observe SM utilization, memory bandwidth
+- [ ] Vary batch size and watch GPU metrics change
+- [ ] Note: when is GPU compute-bound vs memory-bound? (don't read – measure)
 
 ### 2. Inference Runtimes – HF vs vLLM (Baseline)
 - [ ] Set up a GPU environment (local or cloud)
@@ -131,11 +146,11 @@
 
 ---
 
-## Phase 2 (Months 4–6) – Quantization, Kernels & Compiler Taste
+## Phase 2 (Feb 10 → Mar 23) – Quantization & Kernel Experiments
 
-### 5. Quantization – Latency vs Quality
-- [ ] Review quantization basics: FP16, BF16, FP8, INT8, INT4
-- [ ] Learn PTQ (post-training quant) vs QAT (quant-aware training)
+### 5. Quantization – Just Do It
+- [ ] Skip theory – download an AWQ-quantized model and serve it
+- [ ] Compare FP16 vs INT8 vs INT4 on same model – measure, don't read
 - [ ] Quantize a 7B model to 8-bit (e.g., AWQ or similar)
 - [ ] (Optional) Quantize the same model to 4-bit
 - [ ] For each version (FP16 / 8-bit / 4-bit):
@@ -166,7 +181,7 @@
 
 ---
 
-## Phase 3 (Months 7–9) – Consultant-Level Optimization Skills
+## Phase 3 (Mar 24 → May 18) – Optimization Sprints
 
 ### 8. High-Throughput Inference & Load Behavior
 - [ ] Build or use a load-testing harness for your LLM API
@@ -211,7 +226,7 @@
 
 ---
 
-## Phase 4 (Months 10–12) – Productizing Into a Consulting Offer
+## Phase 4 (May 19 → Jun 29) – Ship & Productize
 
 ### 11. Define Productized Services
 
@@ -245,7 +260,7 @@
 
 ---
 
-## Months 12–18 – Becoming a Recognized Inference Specialist
+## Recognition Phase (Jun 30 → Dec 2026) – Visibility & Clients
 
 ### 13. Choose a Niche to Dominate
 - [ ] Choose a niche focus (example options):
@@ -314,36 +329,15 @@
 
 ---
 
-## Timeline Adjustment Suggestions
+## Weekly Deliverables Checklist
 
-After reviewing the roadmap, here are recommended timeline adjustments:
+Every week should produce **at least one** of:
+- [ ] A working script or config
+- [ ] A benchmark result with numbers
+- [ ] A GitHub commit with code
+- [ ] A short writeup (< 1 page)
 
-| Original | Suggested | Rationale |
-|----------|-----------|-----------|
-| **Phase 0: Days 1-20** | **Days 1-30** | OS foundations are critical; extra time ensures solid baseline. 7 topics in 20 days is aggressive (< 3 days each). |
-| **Phase 1: Months 1-3** | **Months 1-2** | If Phase 0 is done well, Phase 1 moves faster. GPU basics + vLLM comparison can be compressed. |
-| **Phase 2: Months 4-6** | **Months 3-5** | Quantization and FlashAttention are well-documented now; can move faster. Compiler stack may need full month. |
-| **Phase 3: Months 7-9** | **Months 6-8** | This is the core value creation phase; keep 3 months but start earlier. |
-| **Phase 4: Months 10-12** | **Months 9-11** | Productizing can overlap with Phase 3 case studies. |
-| **Recognition: Months 12-18** | **Months 10-18** | Start visibility work earlier; talks/posts compound over time. |
-
-### Additional Suggestions
-
-1. **Parallelize OS + GPU learning**: After OS-01 and OS-02, start GPU basics while continuing OS topics
-2. **Front-load vLLM**: vLLM is the primary tool; consider deeper vLLM study in Phase 1 rather than waiting
-3. **Add checkpoint milestones**: Add concrete "ship by" dates for repos and blog posts
-4. **Consider 100-day sprints**: Align phases with your "100 Days of Engineering" format for accountability
-
-### Revised High-Level Timeline
-
-```
-Days 1-30:    Phase 0 - OS Foundations
-Days 31-90:   Phase 1 - GPU Basics + vLLM Baseline  
-Days 91-150:  Phase 2 - Quantization + Kernels + Compilers
-Days 151-240: Phase 3 - Optimization Mastery + Case Studies
-Days 241-330: Phase 4 - Productizing + Credibility
-Days 331-540: Recognition Phase - Niche + Visibility + Scale
-```
+**No week without shipping.**
 
 ---
 
