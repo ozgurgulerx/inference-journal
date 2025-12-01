@@ -1,4 +1,4 @@
-- [ ] Fill out `LOG.md` with today’s work.
-- [ ] Record raw numbers in `metrics.json`.
-- [ ] Drop any helper scripts into `code/` and link them here.
-- [ ] Add learnings to `topics/` once they feel reusable.
+- [ ] Fill out `LOG.md` with today's work
+- [ ] Record raw numbers in `metrics.json`
+- [ ] Drop any helper scripts into `code/` and link them here
+- [ ] Add learnings to `topics/` once they feel reusable
