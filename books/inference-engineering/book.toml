@@ -1,0 +1,32 @@
+[book]
+title = "Inference Engineering"
+authors = ["100 Days of Inference Engineering"]
+description = "A practical guide to serving Large Language Models at scale"
+src = "."
+language = "en"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/ozgurgulerx/inference-journal"
+git-repository-icon = "fa-github"
+edit-url-template = "https://github.com/ozgurgulerx/inference-journal/edit/main/books/inference-engineering/{path}"
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.playground]
+editable = false
+copy-js = true
+
+[output.html.search]
+enable = true
+limit-results = 30
+teaser-word-count = 30
+use-hierarchical-headers = true
+copy-js = true
