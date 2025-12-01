@@ -4,6 +4,17 @@
 
 ---
 
+## In This Chapter
+
+- [What is Inference Engineering?](#what-is-inference-engineering)
+- [The Inference Stack](#the-inference-stack)
+- [Key Performance Levers](#key-performance-levers)
+- [Core Concepts You Must Know](#core-concepts-you-must-know)
+- [Your First Lab Notebook Entry](#your-first-lab-notebook-entry)
+- [Essential Resources](#essential-resources)
+
+---
+
 ## What is Inference Engineering?
 
 **Inference engineering** is the discipline of designing and operating the stack that turns a trained model into a fast, cheap, and reliable API.

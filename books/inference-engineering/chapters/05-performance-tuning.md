@@ -4,6 +4,22 @@
 
 ---
 
+## In This Chapter
+
+- [Overview](#overview)
+- [The Fundamental Trade-off](#the-fundamental-trade-off)
+- [5.1 Latency Tuning and Acceleration Techniques](#51-latency-tuning-and-acceleration-techniques)
+  - [Fused Kernels and Efficient Ops](#fused-kernels-and-efficient-ops)
+  - [Speculative Decoding](#speculative-decoding)
+  - [Prefill–Decode Separation](#prefilldecode-separation)
+  - [Efficient Sampling & Caching](#efficient-sampling--caching)
+- [5.2 Model Quantization and Compression](#52-model-quantization-and-compression)
+- [5.3 Compiler Toolchains and Kernel Optimization](#53-compiler-toolchains-and-kernel-optimization)
+- [Performance Tuning Workflow](#performance-tuning-workflow)
+- [Key Takeaways](#key-takeaways)
+
+---
+
 ## Overview
 
 vLLM's claim to fame is high throughput and efficiency. This chapter covers:

@@ -4,6 +4,21 @@
 
 ---
 
+## In This Chapter
+
+- [Overview](#overview)
+- [Parallelism Strategies](#parallelism-strategies)
+  - [Tensor Parallelism](#tensor-parallelism)
+  - [Pipeline Parallelism](#pipeline-parallelism)
+- [Kubernetes Deployments](#kubernetes-deployments)
+- [Autoscaling](#autoscaling)
+- [Load Balancing](#load-balancing)
+- [Multi-Node with Ray](#multi-node-with-ray)
+- [Cost Optimization](#cost-optimization)
+- [Architecture Patterns](#architecture-patterns)
+
+---
+
 ## Overview
 
 This chapter covers scaling LLM inference across multiple GPUs and nodes, including:

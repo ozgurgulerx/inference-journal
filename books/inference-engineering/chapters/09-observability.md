@@ -4,6 +4,19 @@
 
 ---
 
+## In This Chapter
+
+- [Overview](#overview)
+- [Logging](#logging)
+- [Metrics](#metrics)
+- [Tracing](#tracing)
+- [Alerting](#alerting)
+- [Debugging](#debugging)
+- [Best Practices](#best-practices)
+- [Observability Stack Example](#observability-stack-example)
+
+---
+
 ## Overview
 
 Production LLM serving requires comprehensive observability:

@@ -4,6 +4,32 @@
 
 ---
 
+## In This Appendix
+
+- [A](#a) - Activation, AWQ, Autoregressive
+- [B](#b) - Batch Size, BF16
+- [C](#c) - CUDA, CUDA Graph, Continuous Batching
+- [D](#d) - Decode Phase, DeepSpeed
+- [F](#f) - Flash Attention, FP8, FP16
+- [G](#g) - GPTQ, GQA
+- [H](#h) - HBM, Hugging Face
+- [I](#i) - Inference, ITL
+- [K](#k) - KV Cache
+- [L](#l) - LoRA, LPU
+- [M](#m) - MIG, MoE
+- [N](#n) - NCCL, NVLink
+- [P](#p) - PagedAttention, Pipeline Parallelism, Prefill Phase, Prefix Caching
+- [Q](#q) - Quantization
+- [R](#r) - RoPE
+- [S](#s) - SLO, Speculative Decoding, Streaming
+- [T](#t) - Tensor Parallelism, TGI, TensorRT, TTFT, Throughput
+- [V](#v) - vLLM
+- [X](#x) - XLA
+- [Metrics Quick Reference](#metrics-quick-reference)
+- [Memory Formulas](#memory-formulas)
+
+---
+
 ## A
 
 **Activation**

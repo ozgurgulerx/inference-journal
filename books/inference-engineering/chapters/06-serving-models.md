@@ -4,6 +4,23 @@
 
 ---
 
+## In This Chapter
+
+- [Overview](#overview)
+- [6.1 Single GPU Inference](#61-single-gpu-inference)
+- [6.2 Distributed and Scalable Inference](#62-distributed-and-scalable-inference)
+  - [Tensor Parallelism (TP)](#tensor-parallelism-tp)
+  - [Pipeline Parallelism (PP)](#pipeline-parallelism-pp)
+  - [Multi-Node Deployment](#multi-node-deployment)
+- [6.3 Weight Management Methods](#63-weight-management-methods)
+  - [6.3.1 Weight Streaming](#631-weight-streaming)
+  - [6.3.2 Other Weight Management Methods](#632-other-weight-management-methods)
+- [6.4 Multi-Tenancy and Isolation](#64-multi-tenancy-and-isolation)
+- [Model Serving Patterns](#model-serving-patterns)
+- [Architecture Decision Guide](#architecture-decision-guide)
+
+---
+
 ## Overview
 
 This chapter covers serving various model types:

@@ -4,6 +4,18 @@
 
 ---
 
+## In This Chapter
+
+- [Overview](#overview)
+- [OpenAI SDK](#openai-sdk)
+- [Hugging Face Hub](#hugging-face-hub)
+- [LangChain](#langchain)
+- [LlamaIndex](#llamaindex)
+- [Other Integrations](#other-integrations)
+- [API Compatibility Matrix](#api-compatibility-matrix)
+
+---
+
 ## Overview
 
 vLLM provides an OpenAI-compatible API, making it easy to integrate with existing tools and workflows. This chapter covers integration with:

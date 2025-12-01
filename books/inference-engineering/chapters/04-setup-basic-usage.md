@@ -4,6 +4,20 @@
 
 ---
 
+## In This Chapter
+
+- [Overview](#overview)
+- [Installation](#installation)
+- [Serve an SLM on a Single GPU with vLLM](#serve-an-slm-on-a-single-gpu-with-vllm)
+- [Testing the Server](#testing-the-server)
+- [Enable Streaming Responses](#enable-streaming-responses)
+- [Use the OpenAI Python SDK](#use-the-openai-python-sdk)
+- [Common Serving Configurations](#common-serving-configurations)
+- [Benchmarking Your Setup](#benchmarking-your-setup)
+- [Troubleshooting](#troubleshooting)
+
+---
+
 ## Overview
 
 This chapter walks through setting up vLLM, serving your first model, and integrating with the OpenAI-compatible API. By the end, you'll have a working inference server.

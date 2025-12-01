@@ -4,6 +4,20 @@
 
 ---
 
+## In This Chapter
+
+- [Overview](#overview)
+- [Landscape Overview](#landscape-overview)
+- [Cloud Platforms](#cloud-platforms)
+- [Inference Providers](#inference-providers)
+- [Comparison Matrix](#comparison-matrix)
+- [Self-Managed Options](#self-managed-options)
+- [Choosing a Provider](#choosing-a-provider)
+- [Emerging Trends](#emerging-trends)
+- [Practical Recommendations](#practical-recommendations)
+
+---
+
 ## Overview
 
 The LLM inference ecosystem includes various platforms, from bare-metal GPU providers to fully-managed inference services. This chapter maps the landscape.

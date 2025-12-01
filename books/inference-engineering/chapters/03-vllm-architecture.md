@@ -4,6 +4,23 @@
 
 ---
 
+## In This Chapter
+
+- [Overview](#overview)
+- [Key Concepts](#key-concepts)
+  - [1. Paged Attention](#1-paged-attention)
+  - [2. Continuous Batching](#2-continuous-batching)
+  - [3. Request Scheduling](#3-request-scheduling)
+  - [4. Offline Batch Inferencing](#4-offline-batch-inferencing)
+  - [5. Optimized Compute Path](#5-optimized-compute-path)
+  - [6. Prefix Caching](#6-prefix-caching)
+  - [7. Quantization Support](#7-quantization-support)
+  - [8. Separation of API and Engine](#8-separation-of-api-and-engine)
+- [Hardware-Aware Deployment](#hardware-aware-deployment)
+- [Architecture Summary](#architecture-summary)
+
+---
+
 ## Overview
 
 vLLM is a high-throughput and memory-efficient inference engine for LLMs. Its core innovation is **PagedAttention**, which manages the KV cache like operating system virtual memory, enabling efficient memory utilization and high concurrency.

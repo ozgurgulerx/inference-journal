@@ -4,6 +4,21 @@
 
 ---
 
+## In This Chapter
+
+- [Overview](#overview)
+- [1. Supported Operating Systems](#1-supported-operating-systems)
+- [2. Kernel and System-Level Optimizations](#2-kernel-and-system-level-optimizations)
+- [3. GPU Driver and Toolkit Setup](#3-gpu-driver-and-toolkit-setup)
+- [4. TPU Setup](#4-tpu-setup)
+- [5. LLM Serving Frameworks](#5-llm-serving-frameworks)
+- [6. Containerization Best Practices](#6-containerization-best-practices)
+- [7. Kubernetes Support](#7-kubernetes-support)
+- [8. Ray for Distributed Inference](#8-ray-for-distributed-inference)
+- [Quick Reference: Performance Checklist](#quick-reference-performance-checklist)
+
+---
+
 ## Overview
 
 Deploying large language models for high-throughput, low-latency inference requires careful tuning of the operating system, hardware drivers, and serving frameworks. This chapter details the OS-level tweaks, installations, and configurations needed to serve LLMs efficiently on cutting-edge GPUs and TPUs.
@@ -398,6 +413,84 @@ topologyManagerPolicy: best-effort
 resources:
   limits:
     nvidia.com/mig-1g.5gb: 1  # Request specific MIG profile
+```
+
+---
+
+## 8. Ray for Distributed Inference
+
+Ray is a distributed computing framework often used with vLLM for multi-node deployments.
+
+### Ray Installation
+
+```bash
+pip install ray[default]
+```
+
+### Starting a Ray Cluster
+
+```bash
+# Head node
+ray start --head --port=6379 --dashboard-host=0.0.0.0
+
+# Worker nodes
+ray start --address=<head-ip>:6379
+```
+
+### Ray with vLLM
+
+```bash
+# Serve model across Ray cluster
+vllm serve large-model \
+  --tensor-parallel-size 8 \
+  --distributed-executor-backend ray
+```
+
+### Ray Serve for LLM Endpoints
+
+```python
+from ray import serve
+from vllm import LLM
+
+@serve.deployment(ray_actor_options={"num_gpus": 1})
+class LLMDeployment:
+    def __init__(self):
+        self.llm = LLM(model="meta-llama/Meta-Llama-3-8B-Instruct")
+    
+    async def __call__(self, request):
+        prompt = await request.json()
+        return self.llm.generate(prompt["text"])
+
+app = LLMDeployment.bind()
+serve.run(app)
+```
+
+### KubeRay for Kubernetes
+
+```yaml
+apiVersion: ray.io/v1alpha1
+kind: RayCluster
+metadata:
+  name: vllm-cluster
+spec:
+  headGroupSpec:
+    template:
+      spec:
+        containers:
+        - name: ray-head
+          image: rayproject/ray:latest
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+  workerGroupSpecs:
+  - replicas: 2
+    template:
+      spec:
+        containers:
+        - name: ray-worker
+          resources:
+            limits:
+              nvidia.com/gpu: 1
 ```
 
 ---

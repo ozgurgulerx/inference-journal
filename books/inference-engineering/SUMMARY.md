@@ -19,6 +19,7 @@
   - [LLM Serving Frameworks](chapters/02-os-essentials.md#5-llm-serving-frameworks)
   - [Containerization Best Practices](chapters/02-os-essentials.md#6-containerization-best-practices)
   - [Kubernetes Support](chapters/02-os-essentials.md#7-kubernetes-support)
+  - [Ray for Distributed Inference](chapters/02-os-essentials.md#8-ray-for-distributed-inference)
 
 ---
 

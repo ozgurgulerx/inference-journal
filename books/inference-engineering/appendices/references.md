@@ -4,6 +4,19 @@
 
 ---
 
+## In This Appendix
+
+- [Official Documentation](#official-documentation)
+- [Academic Papers](#academic-papers)
+- [Blog Posts & Tutorials](#blog-posts--tutorials)
+- [Tools & Libraries](#tools--libraries)
+- [Communities](#communities)
+- [Video Resources](#video-resources)
+- [Books](#books)
+- [Model Repositories](#model-repositories)
+
+---
+
 ## Official Documentation
 
 ### Inference Engines

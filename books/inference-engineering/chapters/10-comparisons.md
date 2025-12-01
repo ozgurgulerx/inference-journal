@@ -4,6 +4,20 @@
 
 ---
 
+## In This Chapter
+
+- [Overview](#overview)
+- [Engine Comparison](#engine-comparison)
+- [vLLM vs DeepSpeed](#vllm-vs-deepspeed)
+- [vLLM vs TensorRT-LLM](#vllm-vs-tensorrt-llm)
+- [vLLM vs Text Generation Inference (TGI)](#vllm-vs-text-generation-inference-tgi)
+- [Other Engines](#other-engines)
+- [Decision Framework](#decision-framework)
+- [Further Reading](#further-reading)
+- [Learning Path](#learning-path)
+
+---
+
 ## Overview
 
 This chapter compares vLLM with other popular inference engines and provides resources for continued learning.
