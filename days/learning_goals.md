@@ -1,293 +1,266 @@
-# LLM Inference Mastery Roadmap
+# 100 Days of Inference Engineering
 
 > **Start Date**: December 1, 2025  
-> **Target Duration**: 12–18 Months  
-> **Study Time**: 16 hrs/week (12 hrs effective)  
-> **Goal**: Become a recognized LLM inference optimization specialist
+> **End Date**: March 10, 2026  
+> **Duration**: 100 days  
+> **Effort**: 3-4 hrs/day focused (20-25 hrs/week)  
+> **Goal**: Production-ready LLM inference skills
 
 ---
 
-## Estimated Timeline (Hands-On Focus)
+## The 100-Day Timeline
 
-| Phase | Focus | Dates | Duration | Approach |
-|-------|-------|-------|----------|----------|
-| **Phase 0** | OS Foundations | Dec 1 → Jan 5, 2026 | 5 weeks | 90% hands-on |
-| **Phase 1** | vLLM Hacking | Jan 6 → Feb 9, 2026 | 5 weeks | Build & benchmark |
-| **Phase 2** | Quantization Experiments | Feb 10 → Mar 23, 2026 | 6 weeks | Code & profile |
-| **Phase 3** | Optimization Sprints | Mar 24 → May 18, 2026 | 8 weeks | Real workloads |
-| **Phase 4** | Ship & Productize | May 19 → Jun 29, 2026 | 6 weeks | Case studies |
-| **Recognition** | Visibility & Clients | Jun 30, 2026 → Dec 2026 | 6 months | Talks + repos |
+| Phase | Focus | Days | Dates | Daily Goal |
+|-------|-------|------|-------|------------|
+| **Phase 0** | OS & GPU Setup | 1-15 | Dec 1-15 | Get a GPU box production-ready |
+| **Phase 1** | vLLM Mastery | 16-35 | Dec 16 → Jan 4 | Serve models, benchmark everything |
+| **Phase 2** | Quantization | 36-55 | Jan 5-24 | INT8/INT4, measure quality vs speed |
+| **Phase 3** | Optimization | 56-80 | Jan 25 → Feb 18 | Real workloads, case studies |
+| **Phase 4** | Ship & Share | 81-100 | Feb 19 → Mar 10 | Publish repos, write case studies |
 
 ---
 
 ## In This Document
 
-- [Success Outcomes](#0-outcomes--what-success-looks-like)
-- [Meta-Routine](#meta-routine-every-week)
-- [Phase 0: OS Foundations](#phase-0--os-foundations-dec-1--jan-5) (Dec 1 → Jan 5)
-- [Phase 1: vLLM Hacking](#phase-1-jan-6--feb-9--vllm-hacking--benchmarks) (Jan 6 → Feb 9)
-- [Phase 2: Quantization](#phase-2-feb-10--mar-23--quantization--kernel-experiments) (Feb 10 → Mar 23)
-- [Phase 3: Optimization](#phase-3-mar-24--may-18--optimization-sprints) (Mar 24 → May 18)
-- [Phase 4: Ship & Productize](#phase-4-may-19--jun-29--ship--productize) (May 19 → Jun 29)
-- [Recognition Phase](#recognition-phase-jun-30--dec-2026--visibility--clients) (Jun 30 → Dec 2026)
-- [Advanced Mastery Tracks](#advanced-mastery-tracks)
+- [Success Outcomes](#success-outcomes-day-100)
+- [Daily Routine](#daily-routine)
+- [Phase 0: OS & GPU Setup](#phase-0--os--gpu-setup-days-115) (Days 1-15)
+- [Phase 1: vLLM Mastery](#phase-1--vllm-mastery-days-1635) (Days 16-35)
+- [Phase 2: Quantization](#phase-2--quantization-days-3655) (Days 36-55)
+- [Phase 3: Optimization](#phase-3--optimization-days-5680) (Days 56-80)
+- [Phase 4: Ship & Share](#phase-4--ship--share-days-81100) (Days 81-100)
+- [Advanced Tracks](#advanced-mastery-tracks) (Post-100)
 
 ---
 
-## 0. Outcomes – What "Success" Looks Like
+## Success Outcomes (Day 100)
 
-- [ ] I can profile, optimize, and scale LLM inference on GPUs (H100/A100/L40S or similar)
-- [ ] I am fluent with vLLM, TensorRT-LLM, and Triton Inference Server
-- [ ] I understand and can apply quantization, PagedAttention, KV cache optimization, speculative decoding
-- [ ] I have used at least one compiler stack (TVM / TorchInductor+Triton / IREE) on real models
-- [ ] I have 3–5 public benchmarks (GitHub + short writeups)
-- [ ] I have 2–3 end-to-end optimization case studies (before/after)
-- [ ] I have 1–2 talks/posts explaining my findings
-- [ ] I have a clear productized inference optimization service
-- [ ] I have 1–3 pilot customers or strong pseudo-client case studies
+By March 10, 2026, you will have:
 
----
-
-## Meta-Routine (Every Week)
-
-| Day | Focus | Duration |
-|-----|-------|----------|
-| Mon | Skim docs/code (just enough to unblock) | 1 hr |
-| Tue–Thu | **Hands-on hacking** (code, experiments, profiling) | 2 hrs/day |
-| Fri | Benchmarking & capture results | 1.5 hrs |
-| Weekend | **Ship one artifact** (working code, benchmark, script) | 4–5 hrs |
-
-> **Philosophy**: Learn by doing. Read docs only when stuck. Every session should produce runnable code or measurable results.
+- [ ] A production-ready GPU node with tuned OS settings
+- [ ] Fluency with vLLM serving, configuration, and debugging
+- [ ] Hands-on experience with INT8/INT4 quantization (AWQ, GPTQ)
+- [ ] 3+ benchmark repos with real numbers
+- [ ] 2 case studies: before/after optimization results
+- [ ] 1 published blog post or talk
+- [ ] A repeatable optimization playbook
 
 ---
 
-## Phase 0 – OS Foundations (Dec 1 → Jan 5)
+## Daily Routine
 
-> **Approach**: SSH into a GPU box and configure it. Learn by breaking things. Every task = a working script or config.
+| Time Block | Focus | Output |
+|------------|-------|--------|
+| **First 30 min** | Review yesterday's results, plan today | Clear goal |
+| **Next 2-3 hrs** | **Hands-on hacking** – code, run, measure | Working code |
+| **Last 30 min** | Log results, commit code, note blockers | Day log entry |
 
-### OS-01: GPU Node Bring-Up
+> **Rule**: Every day produces either **code**, **numbers**, or **a config**. No passive reading days.
+
+---
+
+## Phase 0 – OS & GPU Setup (Days 1-15)
+
+> **Dec 1-15** | Get a GPU box production-ready. Every day = a working script or config.
+
+### Days 1-3: GPU Node Bring-Up
 - [ ] Install NVIDIA drivers, CUDA, cuDNN, NCCL, and TensorRT
 - [ ] Verify with `nvidia-smi` and `nvcc`
 - [ ] Prepare a repeatable bootstrap script
 
-### OS-02: CPU & NUMA for LLM Inference
-- [ ] Set the CPU governor to `performance`
-- [ ] Study NUMA topology
-- [ ] Pin processes to GPU-local cores
-- [ ] Benchmark throughput and latency improvements
+### Days 4-5: CPU & NUMA
+- [ ] Set CPU governor to `performance`
+- [ ] Map NUMA topology with `numactl --hardware`
+- [ ] Pin vLLM process to GPU-local cores
+- [ ] Benchmark: measure latency before/after pinning
 
-### OS-03: Memory Tuning & Huge Pages
-- [ ] Configure Transparent Huge Pages (prefer `madvise`)
-- [ ] Disable swap via low swappiness
-- [ ] Learn when to reserve 2 MB or 1 GB hugepages
+### Days 6-7: Memory & Huge Pages
+- [ ] Configure THP to `madvise`
+- [ ] Set `vm.swappiness=10`
+- [ ] Reserve 1GB hugepages, verify with `cat /proc/meminfo`
 
-### OS-04: Storage & Model Load Performance
-- [ ] Benchmark loading models from NVMe vs network storage
-- [ ] Tune the I/O scheduler
-- [ ] Understand page-cache effects
+### Days 8-9: Storage
+- [ ] Time model load from NVMe vs network
+- [ ] Set I/O scheduler to `none` for NVMe
+- [ ] Script to pre-warm page cache
 
-### OS-05: Networking for LLM Services
-- [ ] Tune NIC MTU (e.g., jumbo frames)
-- [ ] Enable RSS and IRQ affinity
-- [ ] Set key sysctls (`somaxconn`, socket buffers)
-- [ ] Observe impact on latency
+### Days 10-11: Networking
+- [ ] Enable jumbo frames (MTU 9000)
+- [ ] Configure IRQ affinity for NIC
+- [ ] Set `net.core.somaxconn=65535`
+- [ ] Measure HTTP latency before/after
 
-### OS-06: Containers & GPU Exposure
-- [ ] Master the NVIDIA Container Toolkit
-- [ ] Understand host driver vs container runtime
-- [ ] Use the GPU Operator in Kubernetes to expose GPUs
+### Days 12-13: Containers
+- [ ] Install NVIDIA Container Toolkit
+- [ ] Run vLLM in Docker with GPU access
+- [ ] Create a working `docker-compose.yml`
 
-### OS-07: Observability for Inference Nodes
-- [ ] Set up `node_exporter` and DCGM exporter into Prometheus/Grafana
-- [ ] Learn to interpret CPU, GPU, storage, and network metrics
-
----
-
-## Phase 1 (Jan 6 → Feb 9) – vLLM Hacking & Benchmarks
-
-### 1. GPU Basics (Learn While Doing)
-- [ ] Run `nvidia-smi dmon` while serving – observe SM utilization, memory bandwidth
-- [ ] Vary batch size and watch GPU metrics change
-- [ ] Note: when is GPU compute-bound vs memory-bound? (don't read – measure)
-
-### 2. Inference Runtimes – HF vs vLLM (Baseline)
-- [ ] Set up a GPU environment (local or cloud)
-- [ ] Run a 7B model with naive Hugging Face Transformers (no vLLM)
-- [ ] Measure for HF:
-  - [ ] Latency per token (single request)
-  - [ ] Throughput (tokens/sec) for a small batch
-  - [ ] Peak GPU memory usage
-- [ ] Install and run vLLM with the same 7B model
-- [ ] Measure for vLLM:
-  - [ ] Latency per token
-  - [ ] Throughput (tokens/sec)
-  - [ ] Peak GPU memory usage
-- [ ] Create a small comparison table: HF vs vLLM
-- [ ] Create a minimal GitHub repo: `transformers_vs_vllm_baseline`
-
-### 3. Basic Profiling
-- [ ] Use `nvidia-smi` / `nvtop` to observe GPU utilization while serving
-- [ ] Install and run Nsight Systems (or similar profiler)
-- [ ] Capture a trace for:
-  - [ ] HF-only server run
-  - [ ] vLLM server run
-- [ ] Note: number of kernels, idle time, kernel launch patterns
-- [ ] Write a 1-page note: "What Nsight shows about naive vs vLLM serving"
-
-### 4. Scaling Basics – Load & Parameters
-- [ ] Implement or use a simple load generator (Python script or tool)
-- [ ] Run with varying:
-  - [ ] batch sizes
-  - [ ] max_new_tokens
-  - [ ] concurrent requests
-- [ ] Record or plot: tokens/sec vs batch size
-- [ ] Identify "sweet spots" (good throughput, acceptable latency)
-- [ ] Write a short summary: "How batch size & sequence length affect my LLM throughput"
+### Days 14-15: Observability
+- [ ] Deploy `node_exporter` + DCGM exporter
+- [ ] Create Grafana dashboard for GPU metrics
+- [ ] **Deliverable**: Screenshot of working dashboard
 
 ---
 
-## Phase 2 (Feb 10 → Mar 23) – Quantization & Kernel Experiments
+## Phase 1 – vLLM Mastery (Days 16-35)
 
-### 5. Quantization – Just Do It
-- [ ] Skip theory – download an AWQ-quantized model and serve it
-- [ ] Compare FP16 vs INT8 vs INT4 on same model – measure, don't read
-- [ ] Quantize a 7B model to 8-bit (e.g., AWQ or similar)
-- [ ] (Optional) Quantize the same model to 4-bit
-- [ ] For each version (FP16 / 8-bit / 4-bit):
-  - [ ] Measure GPU memory usage
-  - [ ] Measure tokens/sec and latency
-  - [ ] Evaluate a simple accuracy metric (perplexity or small eval set)
-- [ ] Document trade-offs: size vs speed vs quality
-- [ ] Create or update a repo: `7B_quantization_experiments`
+> **Dec 16 → Jan 4** | Serve models, benchmark everything. Ship a comparison repo.
 
-### 6. Fused Kernels & FlashAttention
-- [ ] Read how vanilla attention works vs FlashAttention
-- [ ] Use a model/runtime with FlashAttention support
-- [ ] Benchmark with FlashAttention enabled vs disabled (if possible)
-- [ ] Profile both runs and compare:
-  - [ ] Kernel time distribution
-  - [ ] Overall latency
-- [ ] Write a short doc: "What FlashAttention changes in transformer performance"
-- [ ] (Optional advanced) Implement a tiny Triton kernel (e.g., matmul or layernorm)
-- [ ] Verify it runs and compare basic performance vs naive PyTorch
+### Days 16-18: HF vs vLLM Baseline
+- [ ] Serve Llama-3-8B with HuggingFace `transformers`
+- [ ] Measure: latency, throughput, memory
+- [ ] Serve same model with vLLM
+- [ ] Measure: latency, throughput, memory
+- [ ] **Deliverable**: Comparison table in a GitHub repo
 
-### 7. One Compiler Stack (TVM / TorchInductor / IREE)
-- [ ] Choose a compiler stack (TVM, TorchInductor+Triton, or IREE)
-- [ ] Run a small model or a single transformer block through it
-- [ ] Get it to execute end-to-end on GPU
-- [ ] Measure execution time vs naive PyTorch
-- [ ] Note key issues (build, op coverage, debugging pain points)
-- [ ] Write a short note: "First impressions using [chosen compiler] on a transformer block"
+### Days 19-22: vLLM Deep Dive
+- [ ] Experiment with `--max-model-len`, `--gpu-memory-utilization`
+- [ ] Enable and test prefix caching
+- [ ] Test streaming responses
+- [ ] Run with different `--dtype` (fp16, bf16)
+- [ ] Document which flags affect what
 
----
+### Days 23-26: Profiling
+- [ ] Run `nvidia-smi dmon` during inference
+- [ ] Identify compute-bound vs memory-bound regimes
+- [ ] Install Nsight Systems, capture a trace
+- [ ] Compare kernel patterns: HF vs vLLM
+- [ ] **Deliverable**: 1-page profiling notes
 
-## Phase 3 (Mar 24 → May 18) – Optimization Sprints
+### Days 27-30: Load Testing
+- [ ] Build a simple load generator (Python + `aiohttp`)
+- [ ] Test with 1, 10, 50, 100 concurrent requests
+- [ ] Plot: throughput vs concurrency
+- [ ] Find the "sweet spot" for your GPU
+- [ ] **Deliverable**: Load test script + results chart
 
-### 8. High-Throughput Inference & Load Behavior
-- [ ] Build or use a load-testing harness for your LLM API
-- [ ] Simulate different client loads (e.g., 1, 10, 100, 500 concurrent clients)
-- [ ] For each load, record:
-  - [ ] Throughput (tokens/sec)
-  - [ ] p50 / p95 latency
-  - [ ] GPU utilization
-- [ ] Tune runtime config:
-  - [ ] max batch size
-  - [ ] max concurrent requests
-- [ ] Identify configs that give high throughput and acceptable p95 latency
-- [ ] Write a mini-report: "How vLLM behaves under increasing load on my hardware"
-
-### 9. Advanced Techniques – Speculative Decoding & KV Cache
-- [ ] Study speculative decoding (draft + target model flow)
-- [ ] Try at least one speculative decoding implementation if accessible
-- [ ] Compare latency with and without speculative decoding
-- [ ] Study KV cache behavior:
-  - [ ] How KV cache scales with sequence length
-  - [ ] Impact on memory and throughput
-- [ ] Experiment with:
-  - [ ] Different max sequence lengths
-  - [ ] Different KV cache settings (if configurable)
-- [ ] Document impact on memory usage and latency
-
-### 10. Full Optimization Case Study
-- [ ] Define a realistic workload (e.g., "512-token customer support chat responses")
-- [ ] For that workload, run:
-  - [ ] Baseline 1: Naive HF Transformers server
-  - [ ] Baseline 2: vLLM default configuration
-  - [ ] Optimization 1: vLLM + tuned batching + tuned concurrency
-  - [ ] Optimization 2: vLLM + quantized model
-  - [ ] (Optional) Optimization 3: add FlashAttention, speculative decoding, or other tricks
-- [ ] For each configuration:
-  - [ ] Measure tokens/sec
-  - [ ] Measure p95 latency
-  - [ ] Measure GPU memory
-  - [ ] Estimate approximate cost per million tokens
-- [ ] Summarize results in a comparison table
-- [ ] Create a case study document: "Case Study: Reducing LLM inference cost and latency"
+### Days 31-35: Multi-Model Serving
+- [ ] Serve 2-3 different models (7B, 13B sizes)
+- [ ] Test Mistral, Llama, Qwen variants
+- [ ] Benchmark each, note differences
+- [ ] **Deliverable**: Multi-model benchmark repo
 
 ---
 
-## Phase 4 (May 19 → Jun 29) – Ship & Productize
+## Phase 2 – Quantization (Days 36-55)
 
-### 11. Define Productized Services
+> **Jan 5-24** | INT8/INT4 experiments. Measure quality vs speed trade-offs.
 
-**Inference Health Check (2–3 weeks)**:
-- [ ] Define inputs from client (current setup, hardware, models, traffic)
-- [ ] Define benchmark & profiling plan
-- [ ] Define deliverables (before/after benchmarks, config recommendations, report)
+### Days 36-40: AWQ Quantization
+- [ ] Download AWQ-quantized Llama-3-8B
+- [ ] Serve with vLLM, benchmark throughput
+- [ ] Compare: FP16 vs AWQ-INT4
+- [ ] Measure memory savings
+- [ ] **Deliverable**: Quantization comparison table
 
-**Optimization Sprint (4–6 weeks)**:
-- [ ] Implementation of quantization, runtime swap (e.g., to vLLM/TRT-LLM)
-- [ ] Batching & KV cache tuning
-- [ ] Monitoring/alerting setup (basic)
-- [ ] Final report + handover session
+### Days 41-45: GPTQ & Other Formats
+- [ ] Try GPTQ-quantized model
+- [ ] Compare AWQ vs GPTQ on same base model
+- [ ] Test FP8 if hardware supports
+- [ ] Measure perplexity on small eval set
+- [ ] **Deliverable**: Format comparison chart
 
-- [ ] Write 1-page descriptions for each service
+### Days 46-50: FlashAttention
+- [ ] Verify FlashAttention is enabled in vLLM
+- [ ] Benchmark with/without (if toggleable)
+- [ ] Profile attention kernel time
+- [ ] Test with long sequences (4K, 8K, 16K tokens)
+- [ ] **Deliverable**: FlashAttention impact notes
 
-### 12. Credibility Assets
-- [ ] Create a simple one-page website or doc:
-  - [ ] Who you are
-  - [ ] What you offer (two productized services)
-  - [ ] 2–3 anonymized case-study summaries
-- [ ] Prepare an 8–12 slide deck:
-  - [ ] Problem: LLM inference is expensive and slow
-  - [ ] Your approach: profiling → tuning → quantization → runtime choice
-  - [ ] Example results: your case studies
-  - [ ] Simple pricing/engagement model
-- [ ] Write 2–3 high-signal posts or articles:
-  - [ ] "What most teams get wrong about LLM inference"
-  - [ ] "How vLLM + quantization can cut GPU costs significantly"
-  - [ ] "Lessons learned from profiling real LLM workloads"
+### Days 51-55: Speculative Decoding
+- [ ] Set up speculative decoding with draft model
+- [ ] Measure latency improvement
+- [ ] Test different draft model sizes
+- [ ] Document when it helps vs hurts
+- [ ] **Deliverable**: Speculative decoding benchmark
 
 ---
 
-## Recognition Phase (Jun 30 → Dec 2026) – Visibility & Clients
+## Phase 3 – Optimization (Days 56-80)
 
-### 13. Choose a Niche to Dominate
-- [ ] Choose a niche focus (example options):
-  - [ ] H100 / L40S large-scale inference
-  - [ ] Ultra-low-cost inference for startups
-  - [ ] On-prem / air-gapped inference (banks, gov)
-  - [ ] Latency-critical chat and agents
-- [ ] Write down a clear positioning statement:
-  - [ ] "I help X type of customers achieve Y outcome by Z approach"
+> **Jan 25 → Feb 18** | Real workloads, real case studies. Optimize end-to-end.
 
-### 14. Deeper Benchmarks & OSS Tools
-- [ ] Design 1–2 serious benchmark suites:
-  - [ ] Different models (e.g. 7B, 13B, 70B)
-  - [ ] Different hardware types
-  - [ ] Different runtimes (vLLM, TRT-LLM, etc.)
-- [ ] Publish at least one substantial benchmark report
-- [ ] Open-source a small tool:
-  - [ ] Simple CLI for running standardized benchmarks, or
-  - [ ] Config generator for vLLM/TRT-LLM clusters, or
-  - [ ] Visualization/dashboard templates
+### Days 56-60: KV Cache Tuning
+- [ ] Experiment with `--max-num-seqs`
+- [ ] Test different `--block-size` values
+- [ ] Measure KV cache memory vs sequence length
+- [ ] Find optimal settings for your GPU
+- [ ] **Deliverable**: KV cache tuning guide
 
-### 15. Teaching & Visibility
-- [ ] Give at least one talk:
-  - [ ] Meetup, online webinar, or internal tech talk
-  - [ ] Turn one of your case studies into a conference-style talk
-- [ ] Publish at least one longer-form article:
-  - [ ] "Modern LLM Inference Stack: 2026 Edition" style deep dive
+### Days 61-65: Production Config
+- [ ] Create optimized vLLM config for:
+  - [ ] Latency-optimized (chat)
+  - [ ] Throughput-optimized (batch)
+- [ ] Test with realistic traffic patterns
+- [ ] Document the trade-offs
+- [ ] **Deliverable**: Two production configs with benchmarks
+
+### Days 66-72: Case Study #1
+- [ ] Define workload: "Customer support chatbot"
+- [ ] Baseline: HF Transformers
+- [ ] Optimized: vLLM + quantization + tuning
+- [ ] Measure: latency, throughput, cost
+- [ ] Calculate cost savings
+- [ ] **Deliverable**: Case study document with charts
+
+### Days 73-80: Case Study #2
+- [ ] Define workload: "Batch document processing"
+- [ ] Test with 1000+ requests
+- [ ] Optimize for maximum throughput
+- [ ] Compare different parallelism strategies (if multi-GPU)
+- [ ] **Deliverable**: Second case study with ROI analysis
+
+---
+
+## Phase 4 – Ship & Share (Days 81-100)
+
+> **Feb 19 → Mar 10** | Package and publish everything. Build credibility.
+
+### Days 81-85: Polish Repos
+- [ ] Clean up all benchmark repos
+- [ ] Add proper READMEs with results
+- [ ] Add reproduction scripts
+- [ ] Tag releases
+- [ ] **Deliverable**: 3 polished GitHub repos
+
+### Days 86-90: Write Case Studies
+- [ ] Format case study #1 as blog post
+- [ ] Format case study #2 as blog post
+- [ ] Add charts and visuals
+- [ ] **Deliverable**: 2 publishable case studies
+
+### Days 91-95: Create Playbook
+- [ ] Document your optimization workflow
+- [ ] Create checklists for common scenarios
+- [ ] Package configs and scripts
+- [ ] **Deliverable**: "Inference Optimization Playbook" repo
+
+### Days 96-100: Share & Launch
+- [ ] Publish blog post(s)
+- [ ] Share on Twitter/LinkedIn/HN
+- [ ] Create a simple portfolio page
+- [ ] **Deliverable**: Public presence established
+
+---
+
+## Post-100: Next Steps
+
+> After Day 100, continue building on your foundation:
+
+### Deepen Expertise
+- [ ] Try TensorRT-LLM for comparison
+- [ ] Explore multi-GPU tensor parallelism
+- [ ] Test on different hardware (A100, H100, L40S)
+
+### Build Visibility
+- [ ] Give a talk at a meetup
+- [ ] Write a longer technical article
+- [ ] Engage with the vLLM community
+
+### Productize
+- [ ] Define an "Inference Health Check" service
+- [ ] Create a pricing model
+- [ ] Find 1-2 pilot clients
 
 ---
 
@@ -317,27 +290,27 @@
 
 ---
 
-## Feedback / Reflection Loop (Continuous)
+## Daily Log Template
 
-- [ ] **Every month**: Review what you've shipped (repos, notes, benchmarks)
-- [ ] **Every month**: Update a single "Master Log" document with:
-  - [ ] What you learned technically
-  - [ ] What you shipped
-  - [ ] Where you felt bottlenecked
-- [ ] **Every quarter**: Update your positioning and offers based on what you now know
-- [ ] **Every quarter**: Identify 1–2 potential clients or partners to approach
+```markdown
+# Day XX - [Date]
 
----
+## Goal
+What I planned to accomplish today.
 
-## Weekly Deliverables Checklist
+## Done
+- [ ] Task 1
+- [ ] Task 2
 
-Every week should produce **at least one** of:
-- [ ] A working script or config
-- [ ] A benchmark result with numbers
-- [ ] A GitHub commit with code
-- [ ] A short writeup (< 1 page)
+## Results
+Numbers, screenshots, or code snippets.
 
-**No week without shipping.**
+## Blockers
+What slowed me down.
+
+## Tomorrow
+What's next.
+```
 
 ---
 

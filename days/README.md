@@ -1,58 +1,53 @@
 # 100 Days of Inference Engineering
 
-Daily learning logs and experiments for mastering LLM inference optimization.
+> **Dec 1, 2025 → Mar 10, 2026** | 3-4 hrs/day focused effort
+
+**[📋 Full Roadmap & Checklist →](learning_goals.md)**
 
 ---
 
-## Learning Roadmap
+## The 100-Day Plan
 
-**[View Full Learning Goals & Roadmap →](learning_goals.md)**
-
-A comprehensive 12-18 month plan covering:
-- OS Foundations (Days 1-30)
-- GPU Basics & vLLM (Months 1-2)
-- Quantization & Compilers (Months 3-5)
-- Optimization Mastery (Months 6-8)
-- Productizing (Months 9-11)
-- Recognition & Visibility (Months 10-18)
+| Phase | Days | Dates | Focus |
+|-------|------|-------|-------|
+| **0** | 1-15 | Dec 1-15 | OS & GPU Setup |
+| **1** | 16-35 | Dec 16 → Jan 4 | vLLM Mastery |
+| **2** | 36-55 | Jan 5-24 | Quantization |
+| **3** | 56-80 | Jan 25 → Feb 18 | Optimization |
+| **4** | 81-100 | Feb 19 → Mar 10 | Ship & Share |
 
 ---
 
 ## Daily Logs
 
-| Day | Topic | Status |
-|-----|-------|--------|
-| [Day 001](day-001-initial-setup/) | Initial Setup | ✅ |
-| [Day 002](day-002-GPU-node-bring-up/) | GPU Node Bring-Up (OS-01) | 🔄 |
+| Day | Date | Topic | Status |
+|-----|------|-------|--------|
+| [001](day-001-initial-setup/) | Dec 1 | Initial Setup | ✅ |
+| [002](day-002-GPU-node-bring-up/) | Dec 2 | GPU Node Bring-Up | 🔄 |
+| 003 | Dec 3 | GPU Node Bring-Up | ⏳ |
+| 004 | Dec 4 | CPU & NUMA | ⏳ |
+| 005 | Dec 5 | CPU & NUMA | ⏳ |
+| ... | | | |
 
 ---
 
-## Phase Progress
+## Deliverables Tracker
 
-### Phase 0: OS Foundations
-| Task | Day(s) | Status |
-|------|--------|--------|
-| OS-01: GPU Node Bring-Up | 002 | 🔄 In Progress |
-| OS-02: CPU & NUMA | - | ⏳ Pending |
-| OS-03: Memory Tuning | - | ⏳ Pending |
-| OS-04: Storage Performance | - | ⏳ Pending |
-| OS-05: Networking | - | ⏳ Pending |
-| OS-06: Containers & GPU | - | ⏳ Pending |
-| OS-07: Observability | - | ⏳ Pending |
-
----
-
-## Quick Links
-
-- [Learning Goals & Roadmap](learning_goals.md)
-- [Inference Engineering Book](../books/inference-engineering/README.md)
+| Deliverable | Target Day | Status |
+|-------------|------------|--------|
+| Bootstrap script | 3 | ⏳ |
+| Grafana dashboard | 15 | ⏳ |
+| HF vs vLLM comparison repo | 18 | ⏳ |
+| Load test script | 30 | ⏳ |
+| Quantization benchmark | 40 | ⏳ |
+| Case study #1 | 72 | ⏳ |
+| Case study #2 | 80 | ⏳ |
+| Optimization playbook | 95 | ⏳ |
+| Blog post published | 100 | ⏳ |
 
 ---
 
-## Log Format
+## Links
 
-Each day folder contains:
-- `LOG.md` or `LOG_tier0X.md` - Daily notes and learnings
-- `TODO.md` - Tasks for that day (optional)
-- `metrics.json` - Benchmark results (optional)
-- Supporting scripts and configs
+- [📋 Learning Goals](learning_goals.md)
+- [📚 Inference Engineering Book](../books/inference-engineering/README.md)
