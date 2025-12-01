@@ -25,16 +25,15 @@ N prompts (e.g. 10–20)
 Vary max_new_tokens and maybe batch size (if simple to add).
 
 
-Capture metrics: tokens/sec, generation time, GPU memory usage (snapshot via nvidia-smi --loop-ms=500 redirected to log).
+Capture metrics: tokens/sec, generation time, GPU memory usage (snapshot via `nvidia-smi --loop-ms=500` redirected to log).
 
 
 Produce:
 
 
-benchmarks/day02_hf_toy_client_workload.csv
+`benchmarks/day02_hf_toy_client_workload.csv`
 
-
-notes/day02_toy_client_case_study.md with:
+`notes/day02_toy_client_case_study.md` with:
 
 
 “Before” config (plain HF, default settings)
@@ -46,17 +45,14 @@ Observed throughput/latency
 Quick thoughts on what could be optimized later (e.g. vLLM, quantization, batching).
 
 
-Artifact (GitHub):
-benchmarks/day02_hf_toy_client_workload.csv
+**Artifact (GitHub):**
+- `benchmarks/day02_hf_toy_client_workload.csv`
+- `notes/day02_toy_client_case_study.md`
 
-
-notes/day02_toy_client_case_study.md
-
-
-Commit:
-
-
- day02: toy client HF benchmark – baseline case study
+**Commit:**
+```
+day02: toy client HF benchmark – baseline case study
+```
 
 
 
@@ -70,18 +66,11 @@ Time: 1–1.5h
 
 Lab instructions:
 In your learning-trace repo, add directories:
+- `k8s/` (future manifests)
+- `ray/` (future Ray cluster configs)
+- `services/` (consulting service definitions)
 
-
-k8s/ (future manifests)
-
-
-ray/ (future Ray cluster configs)
-
-
-services/ (consulting service definitions)
-
-
-Create services/inference-health-check.md and write a 1-page skeleton:
+Create `services/inference-health-check.md` and write a 1-page skeleton:
 
 
 Section headers only today:
@@ -102,7 +91,7 @@ Section headers only today:
 Under “01 – GPU Node Baseline”, list today’s OS-01 checks as bullet points.
 
 
-Add a short README.md at repo root explaining what this repo is:
+Add a short `README.md` at repo root explaining what this repo is:
 
 
 “100-day LLM Inference Engineering Learning Trace”
@@ -111,20 +100,15 @@ Add a short README.md at repo root explaining what this repo is:
 Brief description of what Day 2 did.
 
 
-Artifact (GitHub):
-services/inference-health-check.md
+**Artifact (GitHub):**
+- `services/inference-health-check.md`
+- `README.md`
+- `k8s/` and `ray/` folders (even empty with `.gitkeep`)
 
-
-README.md
-
-
-k8s/ and ray/ folders (even empty with .gitkeep)
-
-
-Commit:
-
-
- day02: seed consulting service skeleton + k8s/ray folders
+**Commit:**
+```
+day02: seed consulting service skeleton + k8s/ray folders
+```
 
 
 
