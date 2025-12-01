@@ -49,5 +49,6 @@
 
 ## Links
 
-- [📋 Learning Goals](learning_goals.md)
+- [📋 Learning Goals](learning_goals.md) – Full 100-day checklist
+- [🤖 Daily Coach Prompt](learning_prompt.md) – AI prompt for generating daily plans
 - [📚 Inference Engineering Book](../books/inference-engineering/README.md)

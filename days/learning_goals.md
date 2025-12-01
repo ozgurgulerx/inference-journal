@@ -106,35 +106,43 @@ By March 10, 2026, you will have:
 
 > **Dec 16 → Jan 4** | Serve models, benchmark everything. Ship a comparison repo.
 
-### Days 16-18: HF vs vLLM Baseline
+### Days 16-17: GPU Architecture (Learn While Doing)
+- [ ] Run `nvidia-smi dmon` – observe SMs, memory bandwidth
+- [ ] Read: what are warps, blocks, threads? (30 min max)
+- [ ] Understand: compute-bound vs memory-bound (measure, don't just read)
+- [ ] Note how batch size affects GPU utilization
+
+### Days 18-20: HF vs vLLM Baseline
 - [ ] Serve Llama-3-8B with HuggingFace `transformers`
 - [ ] Measure: latency, throughput, memory
 - [ ] Serve same model with vLLM
 - [ ] Measure: latency, throughput, memory
 - [ ] **Deliverable**: Comparison table in a GitHub repo
 
-### Days 19-22: vLLM Deep Dive
+### Days 21-24: vLLM Deep Dive
 - [ ] Experiment with `--max-model-len`, `--gpu-memory-utilization`
 - [ ] Enable and test prefix caching
 - [ ] Test streaming responses
+- [ ] Test guided decoding (JSON mode)
 - [ ] Run with different `--dtype` (fp16, bf16)
+- [ ] Measure continuous batching: sequential vs concurrent requests
 - [ ] Document which flags affect what
 
-### Days 23-26: Profiling
+### Days 25-28: Profiling
 - [ ] Run `nvidia-smi dmon` during inference
 - [ ] Identify compute-bound vs memory-bound regimes
 - [ ] Install Nsight Systems, capture a trace
 - [ ] Compare kernel patterns: HF vs vLLM
 - [ ] **Deliverable**: 1-page profiling notes
 
-### Days 27-30: Load Testing
+### Days 29-32: Load Testing
 - [ ] Build a simple load generator (Python + `aiohttp`)
 - [ ] Test with 1, 10, 50, 100 concurrent requests
 - [ ] Plot: throughput vs concurrency
 - [ ] Find the "sweet spot" for your GPU
 - [ ] **Deliverable**: Load test script + results chart
 
-### Days 31-35: Multi-Model Serving
+### Days 33-35: Multi-Model Serving
 - [ ] Serve 2-3 different models (7B, 13B sizes)
 - [ ] Test Mistral, Llama, Qwen variants
 - [ ] Benchmark each, note differences
@@ -167,12 +175,19 @@ By March 10, 2026, you will have:
 - [ ] Test with long sequences (4K, 8K, 16K tokens)
 - [ ] **Deliverable**: FlashAttention impact notes
 
-### Days 51-55: Speculative Decoding
+### Days 51-52: Speculative Decoding
 - [ ] Set up speculative decoding with draft model
 - [ ] Measure latency improvement
 - [ ] Test different draft model sizes
 - [ ] Document when it helps vs hurts
 - [ ] **Deliverable**: Speculative decoding benchmark
+
+### Days 53-55: Compiler Stack (TorchInductor/Triton)
+- [ ] Enable `torch.compile()` on a model
+- [ ] Measure execution time vs eager mode
+- [ ] (Optional) Try a simple Triton kernel
+- [ ] Note: build issues, performance gains
+- [ ] **Deliverable**: Compiler experiment notes
 
 ---
 
@@ -251,15 +266,29 @@ By March 10, 2026, you will have:
 - [ ] Try TensorRT-LLM for comparison
 - [ ] Explore multi-GPU tensor parallelism
 - [ ] Test on different hardware (A100, H100, L40S)
+- [ ] Experiment with TVM or IREE compiler
 
 ### Build Visibility
 - [ ] Give a talk at a meetup
-- [ ] Write a longer technical article
+- [ ] Write a longer technical article ("Modern LLM Inference Stack")
 - [ ] Engage with the vLLM community
+- [ ] Choose a niche: H100 scale / low-cost / on-prem / latency-critical
 
-### Productize
-- [ ] Define an "Inference Health Check" service
-- [ ] Create a pricing model
+### Productize (Define Services)
+
+**Inference Health Check (2-3 weeks)**:
+- [ ] Inputs: current setup, hardware, models, traffic
+- [ ] Process: benchmark & profile
+- [ ] Deliverables: before/after benchmarks, config recommendations, report
+
+**Optimization Sprint (4-6 weeks)**:
+- [ ] Implementation: quantization, runtime swap (vLLM/TRT-LLM)
+- [ ] Tuning: batching, KV cache
+- [ ] Setup: monitoring/alerting
+- [ ] Deliverable: final report + handover
+
+- [ ] Write 1-page service descriptions
+- [ ] Create pricing model
 - [ ] Find 1-2 pilot clients
 
 ---
