@@ -367,6 +367,168 @@ GPU KV cache size: Y tokens
 Maximum concurrency for 32,768 tokens per request: Zx
 ```
 
+<details>
+<summary><strong>Sample output (16GB GPU, RTX 2000 Ada)</strong></summary>
+
+```
+INFO [...] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO [...] vLLM API server version 0.11.2
+INFO [...] Resolved architecture: Qwen2ForCausalLM
+INFO [...] Using max model len 32768
+INFO [...] dtype=torch.bfloat16, max_seq_len=32768
+INFO [...] Using FLASH_ATTN backend.
+INFO [...] Loading weights took 5.46 seconds
+INFO [...] Model loading took 2.8871 GiB memory and 6.44 seconds
+INFO [...] torch.compile takes 8.29 s in total
+INFO [...] Available KV cache memory: 5.03 GiB
+INFO [...] GPU KV cache size: 188,512 tokens
+INFO [...] Maximum concurrency for 32,768 tokens per request: 5.75x
+Capturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|██████████| 51/51
+Capturing CUDA graphs (decode, FULL): 100%|██████████| 35/35
+INFO [...] Graph capturing finished in 4 secs, took 0.49 GiB
+INFO [...] init engine took 14.77 seconds
+INFO [...] Starting vLLM API server on http://0.0.0.0:8000
+```
+
+**Key values to note:**
+| Metric | Value |
+|--------|-------|
+| Model weights | 2.89 GiB |
+| KV cache memory | 5.03 GiB |
+| KV cache capacity | 188,512 tokens |
+| Max concurrency @ 32k | 5.75x |
+| CUDA graphs | 0.49 GiB |
+| Total startup time | ~15 seconds |
+
+</details>
+
+<details>
+<summary><strong>🔍 Understanding Each Value (Deep Dive)</strong></summary>
+
+#### 1. `dtype=torch.bfloat16` (BF16 Precision)
+
+**What it means:**  
+`dtype` is the numeric precision used for model weights and activations during inference.
+
+**BF16 = Brain Floating Point 16-bit**, invented by Google for TPUs, now standard on NVIDIA GPUs.
+
+| Property | BF16 | FP16 |
+|----------|------|------|
+| Bits | 16 | 16 |
+| Exponent bits | 8 | 5 |
+| Memory | Same | Same |
+| Numerical stability | ✅ Higher | ⚠️ Lower |
+
+**Why vLLM uses BF16:**
+- Same memory footprint as FP16
+- Much larger exponent range → more stable
+- Required for long-context models (>8k, >32k) to avoid degradation
+- Same speed as FP16 on tensor cores
+
+**Mental model:** BF16 = FP16 performance + FP32 stability.
+
+---
+
+#### 2. `max_seq_len=32768` (Max Context Length)
+
+**What it means:**  
+Maximum number of tokens any single request can contain (prompt + generated tokens).
+
+**Where it comes from:**  
+vLLM auto-infers this from the model's HuggingFace config. Qwen2.5-1.5B supports 32k context.
+
+**Why it matters:**  
+KV cache cost scales linearly with `max_seq_len`:
+```
+KV memory per token ≈ 2 × hidden_size × num_heads × dtype_size
+```
+
+| max_seq_len | Effect |
+|-------------|--------|
+| 32768 | ~6 concurrent full-context users |
+| 4096 | ~46 concurrent users |
+| 2048 | Ultra-fast, hundreds of req/s |
+
+**Mental model:** `max_seq_len` is the height of each request slot in GPU memory.
+
+---
+
+#### 3. `Available KV cache memory: X GiB`
+
+**What it means:**  
+After accounting for model weights, CUDA graphs, and overhead, this is how much VRAM remains for KV cache.
+
+**How it's computed (16GB GPU example):**
+```
+Total VRAM:                    16.0 GB
+- Model weights (BF16):        ~2.9 GB
+- CUDA graphs + compile:       ~0.5 GB
+- PyTorch temp + reserved:     ~1.4 GB
+= Available for vLLM:          ~11.2 GB
+× gpu-memory-utilization 0.6:  ~6.7 GB theoretical
+= Usable after fragmentation:  ~5.0 GB
+```
+
+**Why it's critical:**  
+This is your "budget" for concurrent requests. More KV cache = more users.
+
+---
+
+#### 4. `GPU KV cache size: Y tokens`
+
+**What it means:**  
+Total number of tokens the GPU can hold in KV cache at once.
+
+**How it's calculated:**
+```
+KV cache size (tokens) = available_KV_memory_bytes ÷ KV_per_token_bytes
+```
+
+For Qwen2.5-1.5B, each token's KV entry is ~80–120 KB.
+
+**Example:**  
+5.03 GiB ÷ ~28 bytes per token ≈ 188,512 tokens
+
+**Mental model:** This is the "total seats" on your GPU.
+
+---
+
+#### 5. `Maximum concurrency for 32,768 tokens per request: Zx`
+
+**What it means:**  
+If every request used the full 32k context, how many parallel requests can the GPU support?
+
+**Calculation:**
+```
+max_concurrency = KV_cache_tokens ÷ max_seq_len
+188,512 ÷ 32,768 ≈ 5.75x
+```
+
+**Why this matters:**  
+This is the true upper bound for concurrency.
+
+| max_seq_len | Concurrency |
+|-------------|-------------|
+| 32768 | ~6 users |
+| 4096 | ~46 users |
+| 2048 | ~92 users |
+
+**Mental model:** `max_concurrency = KV_capacity ÷ request_KV_usage`
+
+---
+
+#### Summary Table
+
+| Concept | Meaning | Why It Matters |
+|---------|---------|----------------|
+| `dtype=bfloat16` | Numerical format | Stable long-context, fast tensor cores |
+| `max_seq_len=32768` | Max tokens per request | Controls memory per request |
+| `Available KV cache` | VRAM for KV cache | Determines parallel capacity |
+| `GPU KV cache size` | Token capacity | How many tokens in-flight |
+| `Max concurrency` | Full-context requests | Throughput & user capacity |
+
+</details>
+
 Create a notes file:
 
 ```bash
