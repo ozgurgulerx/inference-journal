@@ -1,491 +1,785 @@
-# Day 002 – Tier 3: Quantization & Advanced Configuration
+# Day 002 – GPU Node Bring-Up on RunPod
+## Tier 3: vLLM Runtime Tuning & Serving Parameters
 
 > **Prerequisites**: Complete [Tier 1](LOG_tier01.md) and [Tier 2](LOG_tier02.md) first  
-> **Goal**: Push performance further with quantization and understand vLLM's tuning knobs  
-> **End State**: AWQ-quantized model running 2x faster, production-ready configuration
+> **Goal**: Understand how vLLM serving parameters change behavior on a single 16GB GPU  
+> **End State**: A small but real performance profile + one baseline "prod" config you trust  
+> **Time**: ~2 hours
 
 ---
 
-## Pre-Reading (30 min)
+## 🎯 What You'll Learn
 
-| Resource | Why | Time |
-|----------|-----|------|
-| [AWQ Paper](https://arxiv.org/abs/2306.00978) | Understand activation-aware quantization | 10 min |
-| [vLLM Quantization Docs](https://docs.vllm.ai/en/latest/quantization/supported_hardware.html) | Which formats work on which GPUs | 10 min |
-| [TheBloke's Quantization Guide](https://huggingface.co/TheBloke) | Practical quantization overview | 10 min |
+How vLLM partitions VRAM between:
+- Model weights
+- KV cache
+- Compiled kernels / CUDA graphs
 
-#### Videos
-- [Quantization Explained](https://www.youtube.com/watch?v=IxrlHAJtqKE) - MIT lecture on quantization basics (20 min)
-- [AWQ Deep Dive](https://www.youtube.com/watch?v=3GULXE7U7mY) - Practical AWQ walkthrough (15 min)
+How these knobs interact:
+- `--gpu-memory-utilization`
+- `--max-model-len`
+- `--max-num-seqs`
+- `--dtype` (implicitly bfloat16)
+- `--enforce-eager` (for debugging)
 
-#### GitHub Repos to Explore
-- [vllm-project/vllm](https://github.com/vllm-project/vllm) - Source code
-- [mit-han-lab/llm-awq](https://github.com/mit-han-lab/llm-awq) - AWQ implementation
-- [AutoGPTQ/AutoGPTQ](https://github.com/AutoGPTQ/AutoGPTQ) - GPTQ implementation
-
----
-
-## Tier 3 – Deep Work Block (~2-3 hours)
-
-**Objective**: Serve quantized models, compare FP16 vs INT4, understand memory-throughput tradeoffs.
+How to interpret vLLM's startup logs:
+- KV cache size
+- Maximum concurrency
+- CUDA graph compile timings
 
 ---
 
-### Task 3.1: Serve AWQ-Quantized Llama-3-8B
-**Tags**: `[Inference–Runtime]` `[Phase2-Quantization]`  
-**Time**: 30 min  
-**Win**: 4-bit model running, using ~50% less memory
+## 🔑 Key vLLM Serving Parameters
 
-#### Learn First
-- **AWQ (Activation-aware Weight Quantization)**: Preserves important weights, quantizes less important ones
-- **INT4**: 4-bit integers instead of FP16 (16-bit), ~4x smaller model
-- **Why it works**: LLM weights have varying importance; smart quantization keeps accuracy
+| Parameter | What It Controls | Default |
+|-----------|------------------|---------|
+| `--gpu-memory-utilization` | Fraction of VRAM for KV cache (0.0–1.0) | 0.9 |
+| `--max-model-len` | Maximum sequence length (tokens) | Model's max |
+| `--max-num-seqs` | Maximum concurrent sequences | 256 |
+| `--enforce-eager` | Disable CUDA graphs (debug mode) | False |
+| `--disable-log-requests` | Suppress per-request logging | False |
 
-#### Lab Instructions
+---
 
-```bash
-# Stop any running servers
-pkill -f "vllm serve"
+## 📘 Key Concepts Explained
 
-# Serve AWQ-quantized model
-# Note: Model downloads automatically, ~4GB instead of ~16GB
-vllm serve TheBloke/Llama-2-7B-Chat-AWQ \
-  --port 8000 \
-  --quantization awq \
-  --gpu-memory-utilization 0.90 \
-  2>&1 | tee ~/artifacts/vllm_awq_startup.log &
+<details>
+<summary><strong>Click to expand deep technical overview</strong></summary>
 
-# Wait for model to load
-sleep 30
+### 1. KV Cache (Key–Value Cache)
 
-# Check memory usage
-nvidia-smi | tee ~/artifacts/nvidia_smi_awq.txt
+**What it is:**  
+During generation, transformer models compute attention over past tokens. To avoid recomputing history every step, vLLM stores:
+- **K** (Key tensor)
+- **V** (Value tensor)
+
+…for every past token in GPU memory.
+
+**Why it matters:**  
+KV cache is the **#1 factor** that determines:
+- How many concurrent requests the GPU can handle
+- Maximum context length
+- Memory pressure
+- Throughput
+
+**vLLM's role:**  
+vLLM implements **PagedAttention**, which:
+- Stores KV cache in a paged memory structure
+- Reduces fragmentation
+- Allows dynamic batching
+- Scales concurrency far better than HuggingFace
+
+**Memory cost:**  
+For Qwen2.5-1.5B, a single token KV entry is ~80–120 KB. Thus:
+```
+KV cache memory ≈ tokens_in_context × KV_per_token
 ```
 
+---
+
+### 2. `gpu-memory-utilization`
+
+**What it is:**  
+Parameter that controls how much VRAM vLLM is allowed to use.
+
 ```bash
-# Test the quantized model
-curl -X POST http://localhost:8000/v1/chat/completions \
+--gpu-memory-utilization 0.8
+```
+
+vLLM will use ~80% of available VRAM for:
+- Model weights
+- KV cache
+- CUDA graphs
+- Compilation artifacts
+
+| Value | Use Case |
+|-------|----------|
+| 0.3–0.5 | Debugging, multi-process |
+| 0.6–0.8 | Balanced production |
+| 0.9–0.95 | Maximum throughput |
+
+**Higher value = more KV cache = more concurrency.**
+
+---
+
+### 3. `max-model-len`
+
+**What it is:**  
+The maximum context length (max tokens per request).
+
+```bash
+--max-model-len 4096
+```
+
+**Why it matters:**  
+Longer max context = more KV memory per request.
+
+| Short max-model-len | Long max-model-len |
+|---------------------|-------------------|
+| ✅ High concurrency | ❌ Low concurrency |
+| ✅ Low memory use | ❌ High memory use |
+| ✅ Fast batching | ❌ Harder batching |
+
+**You are trading context length for concurrency.**
+
+---
+
+### 4. `max-num-seqs`
+
+**What it is:**  
+The maximum number of sequences vLLM is allowed to handle concurrently.
+
+```bash
+--max-num-seqs 16
+```
+
+This is an upper bound on concurrency. Actual concurrency is limited by:
+```
+min(max-num-seqs, KV_capacity)
+```
+
+**Increase when:** You want more throughput and have KV cache headroom.  
+**Decrease when:** You need low, predictable latency.
+
+---
+
+### 5. Continuous Batching (vLLM Superpower)
+
+**Traditional inference** (HuggingFace):
+```
+req1 → finish → req2 → finish → req3 → finish
+```
+
+**vLLM's continuous batching:**
+```
+Batch(t) = all requests currently active → process together
+```
+
+This allows:
+- Higher GPU utilization
+- Massive throughput gains
+- Lower cost per request
+
+If 8 users request simultaneously, vLLM merges them:
+```
+[8 prompts] → (one batched prefill)
+[8 decodes] → (minimized overhead per token)
+```
+
+**This is why your concurrency test shows: latency increases slightly, but throughput increases massively.**
+
+---
+
+### 6. Prefill Phase vs Decode Phase
+
+In autoregressive LLMs, inference has **2 phases**:
+
+**1️⃣ Prefill (Prompt Processing)**
+- Model processes the whole prompt (e.g., 2000 tokens)
+- Heavy: O(N²) attention if not optimized
+- vLLM speeds this up via FlashAttention, chunked prefill, CUDA graphs
+
+**2️⃣ Decode (Token-by-Token Generation)**
+- LLM generates one token at a time
+- Cheap: dominated by KV lookups + small matmuls
+- vLLM optimizes with KV reuse, fused kernels, continuous batching
+
+---
+
+### 7. Chunked Prefill
+
+You saw in logs:
+```
+Chunked prefill is enabled with max_num_batched_tokens=2048.
+```
+
+**What it means:**
+- vLLM splits very long prompts into smaller chunks
+- Reduces GPU memory spikes
+- Allows batching multiple users even if some have long prompts
+- Improves stability on small GPUs (16GB, 12GB, 8GB)
+
+Without chunked prefill, a single long prompt can block the entire batch.
+
+---
+
+### 8. FlashAttention
+
+You saw in logs:
+```
+Using FLASH_ATTN backend.
+```
+
+**FlashAttention:**
+- Fuses multiple attention ops (Softmax, matmul)
+- Computes attention without storing full attention matrix
+- Reduces memory bandwidth cost
+- Provides large speed-ups for long-context prompts
+
+This is foundational for high throughput and fast prefill.
+
+---
+
+### 9. CUDA Graphs
+
+You saw:
+```
+Capturing CUDA graphs...
+Graph capturing finished in 4 secs
+```
+
+**CUDA graphs:**
+- Record GPU execution ("trace" the ops once)
+- Replay that graph with near-zero CPU overhead
+- Remove dynamic Python overhead
+- Give predictable, fast, low-latency inference
+
+vLLM uses 3 types of CUDA graphs:
+1. Prefill graph
+2. Decode graph
+3. Mixed prefill-decode graphs
+
+**This is what makes vLLM much faster than direct PyTorch code.**
+
+---
+
+### 10. TTFT (Time to First Token)
+
+For a user, this is the feeling of **"responsiveness"**.
+
+| Mode | TTFT Definition |
+|------|-----------------|
+| Non-streaming | Time until entire completion ready |
+| Streaming | Time until first token arrives (~50–200ms) |
+
+vLLM makes TTFT faster via:
+- CUDA graph replay
+- Chunked prefill
+- Optimized attention kernels
+- Continuous batching
+
+---
+
+### 11. Token Throughput (tok/s)
+
+This is the real metric for batch workloads:
+```
+throughput = tokens_generated ÷ time
+```
+
+vLLM can reach **tens of thousands of tokens/second** on large GPUs due to:
+- Continuous batching
+- Paged KV cache
+- CUDA graph replay
+- FlashAttention
+
+Your Tier 3 testing shows:
+- Single-user throughput (baseline)
+- Multi-user throughput (continuous batching gain)
+
+---
+
+### 12. BF16 vs FP16
+
+You saw:
+```
+dtype=torch.bfloat16
+```
+
+vLLM auto-selects dtype based on model & GPU support.
+
+**BF16 advantages:**
+- Wider exponent range
+- Safer for long-context math
+- Same memory footprint as FP16
+- Often yields better model quality
+
+If BF16 wasn't supported, vLLM would fall back to FP16.
+
+---
+
+### 13. KV Cache Tokens vs VRAM
+
+When vLLM logs:
+```
+GPU KV cache size: 188,512 tokens
+```
+
+This means your GPU can hold ~188K past tokens in KV cache at once.
+
+This number depends on:
+- GPU VRAM
+- `gpu-memory-utilization`
+- Model hidden sizes
+- dtype (BF16 = larger KV entries than INT4)
+
+---
+
+### 14. Maximum Concurrency
+
+Logged as:
+```
+Maximum concurrency for 32,768 tokens per request: 5.75x
+```
+
+**Meaning:**  
+If every user sent a full-length 32K context, the GPU can serve ~5–6 users at once.
+
+If you reduce `--max-model-len`, this grows quickly:
+- 32K tokens → ~6 concurrent
+- 4K tokens → ~46 concurrent
+
+</details>
+
+---
+
+## Tier 3 Tasks (~2 hours)
+
+---
+
+### ✅ Task 3.1: Capture Baseline vLLM Runtime Settings
+**Tags**: `[vLLM]` `[Introspection]`  
+**Time**: 15 min  
+**Win**: You know exactly what your current serving config does
+
+#### 🔧 Lab Instructions
+
+Restart vLLM cleanly to re-capture logs:
+
+```bash
+pkill -f "vllm serve" || true
+sleep 3
+
+export HF_HUB_ENABLE_HF_TRANSFER=0
+
+vllm serve Qwen/Qwen2.5-1.5B-Instruct \
+  --port 8000 \
+  --gpu-memory-utilization 0.6 2>&1 | tee ~/artifacts/tier03_baseline.log
+```
+
+Wait for startup to complete, then extract these values from the log:
+
+```
+dtype=torch.bfloat16
+max_seq_len=32768
+Available KV cache memory: X GiB
+GPU KV cache size: Y tokens
+Maximum concurrency for 32,768 tokens per request: Zx
+```
+
+Create a notes file:
+
+```bash
+cat > ~/artifacts/tier03_notes.md << 'EOF'
+# Tier 3 – Baseline vLLM Settings (Qwen2.5-1.5B)
+
+## Baseline Config
+- gpu-memory-utilization: 0.6
+- dtype: bfloat16
+- max_seq_len: 32768
+
+## From Logs
+- KV cache memory: [X] GiB
+- KV cache capacity: [Y] tokens
+- Max concurrency @ 32k tokens: [Z]x
+
+## VRAM Partitioning
+GPU VRAM splits roughly into:
+1. Model weights (~2.9 GB)
+2. KV cache (controlled by gpu-memory-utilization)
+3. Compiled kernels / CUDA graphs (~0.5 GB)
+4. Overhead / fragmentation
+EOF
+```
+
+> 💡 **Why this matters:** `gpu-memory-utilization` directly controls how much VRAM goes to KV cache → more KV cache = more concurrent long contexts = more throughput.
+
+#### 🏆 Success Criteria
+- [ ] Baseline log captured
+- [ ] KV cache size and max concurrency noted
+- [ ] Notes file created
+
+---
+
+### ✅ Task 3.2: Systematic `--gpu-memory-utilization` Sweep
+**Tags**: `[Memory]` `[Capacity Planning]`  
+**Time**: 30 min  
+**Win**: Understand how VRAM usage and KV capacity scale
+
+#### 📖 What You're Testing
+
+| Setting | Expected Behavior |
+|---------|-------------------|
+| 0.3 | Low KV cache, good for debugging |
+| 0.6 | Balanced (your baseline) |
+| 0.9 | Maximum KV cache, production use |
+
+#### 🔧 Lab Instructions
+
+Create a helper script:
+
+```bash
+mkdir -p ~/scripts ~/artifacts/tier03-util
+
+cat > ~/scripts/vllm_with_util.sh << 'EOF'
+#!/bin/bash
+UTIL="$1"
+if [ -z "$UTIL" ]; then
+  echo "Usage: vllm_with_util.sh <gpu-memory-utilization>"
+  exit 1
+fi
+
+pkill -f "vllm serve" || true
+sleep 3
+
+export HF_HUB_ENABLE_HF_TRANSFER=0
+
+echo "=== Starting vLLM with gpu-memory-utilization=${UTIL} ==="
+
+vllm serve Qwen/Qwen2.5-1.5B-Instruct \
+  --port 8000 \
+  --gpu-memory-utilization "${UTIL}" 2>&1 | tee ~/artifacts/tier03-util/vllm_util_${UTIL}.log &
+PID=$!
+
+# Wait for engine to initialize
+sleep 60
+
+echo "=== nvidia-smi for util=${UTIL} ===" | tee ~/artifacts/tier03-util/nvidia_util_${UTIL}.txt
+nvidia-smi | tee -a ~/artifacts/tier03-util/nvidia_util_${UTIL}.txt
+
+echo "=== Sending test request ===" 
+curl -s http://localhost:8000/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"Qwen/Qwen2.5-1.5B-Instruct","prompt":"util test","max_tokens":10}' > /dev/null
+
+echo "=== Done for util=${UTIL} (PID=${PID}) ==="
+EOF
+
+chmod +x ~/scripts/vllm_with_util.sh
+```
+
+Run the sweep (one at a time):
+
+```bash
+~/scripts/vllm_with_util.sh 0.3
+# Wait, observe, then Ctrl+C or pkill
+
+~/scripts/vllm_with_util.sh 0.6
+# Wait, observe, then Ctrl+C or pkill
+
+~/scripts/vllm_with_util.sh 0.9
+# Wait, observe, then Ctrl+C or pkill
+```
+
+For each run, extract from the log:
+- `Available KV cache memory`
+- `GPU KV cache size`
+- `Maximum concurrency for 32,768 tokens per request`
+
+Fill in this table:
+
+| gpu-memory-utilization | KV cache GiB | KV tokens | Max concurrency (32k) |
+|------------------------|-------------:|----------:|----------------------:|
+| 0.3                    |      ? GiB   |     ?     |          ?x           |
+| 0.6                    |      ? GiB   |     ?     |          ?x           |
+| 0.9                    |      ? GiB   |     ?     |          ?x           |
+
+> 🧠 **Key Insight:** Higher `gpu-memory-utilization` = more VRAM for KV cache = more concurrent long contexts. On a 16GB card, 0.8–0.9 is ideal for production; 0.3–0.5 is for debugging.
+
+#### 🏆 Success Criteria
+- [ ] All three configs tested
+- [ ] Table filled with actual values
+- [ ] Understand the tradeoff
+
+---
+
+### ✅ Task 3.3: Interplay of `--max-model-len` & KV Cache
+**Tags**: `[Context Length]` `[KV Cache]`  
+**Time**: 25 min  
+**Win**: Understand why long context is expensive and how to trade it off
+
+#### 📖 The Math
+
+From your baseline logs:
+```
+GPU KV cache size: 188,512 tokens
+Maximum concurrency for 32,768 tokens per request: 5.75x
+```
+
+This means:
+- Total KV capacity: ~188K tokens
+- If each request uses 32K tokens → ~5–6 concurrent full-length requests
+- If each request uses 4K tokens → many more concurrent requests!
+
+#### 🔧 Lab Instructions
+
+Test with reduced `--max-model-len`:
+
+```bash
+pkill -f "vllm serve" || true
+sleep 3
+
+export HF_HUB_ENABLE_HF_TRANSFER=0
+
+vllm serve Qwen/Qwen2.5-1.5B-Instruct \
+  --port 8000 \
+  --gpu-memory-utilization 0.8 \
+  --max-model-len 4096 2>&1 | tee ~/artifacts/tier03-maxlen-4096.log &
+
+sleep 60
+```
+
+From the log, grab:
+- `GPU KV cache size`
+- `Maximum concurrency for 4,096 tokens per request`
+
+Compare:
+
+| Config | max-model-len | Max Concurrency |
+|--------|---------------|-----------------|
+| Baseline | 32768 | ~5–6x |
+| Reduced | 4096 | ??x |
+
+> 🧠 **Key Insight:** KV cache capacity (in tokens) is roughly fixed by VRAM. Shorter max sequence length = more concurrent sequences. For chatbots with typical 2–4K contexts, setting `--max-model-len 4096` significantly increases concurrency. **Context length is a resource.**
+
+#### 🏆 Success Criteria
+- [ ] Reduced max-model-len config tested
+- [ ] Observed increased concurrency
+- [ ] Understand the tradeoff
+
+---
+
+### ✅ Task 3.4: Latency & Streaming Check with Tuned Settings
+**Tags**: `[Latency]` `[Streaming]`  
+**Time**: 20 min  
+**Win**: See how your tuned config feels under load
+
+#### 🔧 Lab Instructions
+
+Start with tuned config:
+
+```bash
+pkill -f "vllm serve" || true
+sleep 3
+
+export HF_HUB_ENABLE_HF_TRANSFER=0
+
+vllm serve Qwen/Qwen2.5-1.5B-Instruct \
+  --port 8000 \
+  --gpu-memory-utilization 0.8 \
+  --max-model-len 4096 \
+  --max-num-seqs 16 2>&1 | tee ~/artifacts/tier03-tuned.log &
+
+sleep 60
+```
+
+**Test 1: Non-streaming latency**
+
+```bash
+time curl -s http://localhost:8000/v1/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "TheBloke/Llama-2-7B-Chat-AWQ",
-    "messages": [{"role": "user", "content": "Explain quantization in ML briefly."}],
-    "max_tokens": 100
-  }' | python3 -m json.tool
+    "model":"Qwen/Qwen2.5-1.5B-Instruct",
+    "prompt":"Explain what KV cache is in LLM inference:",
+    "max_tokens":128
+  }' > /tmp/nonstream.json
+
+cat /tmp/nonstream.json | python3 -m json.tool
 ```
 
-#### Success Criteria
-- [ ] AWQ model loads successfully
-- [ ] Memory usage: ~4-5GB instead of ~14GB
-- [ ] Response quality is coherent (not gibberish)
+Record the `real` time from `time`.
+
+**Test 2: Streaming latency**
+
+```bash
+time curl -s http://localhost:8000/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model":"Qwen/Qwen2.5-1.5B-Instruct",
+    "prompt":"Explain what KV cache is in LLM inference:",
+    "max_tokens":128,
+    "stream": true
+  }'
+```
+
+You'll see tokens arriving chunk-by-chunk.
+
+> 🧠 **Feel the difference:**
+> - Non-streaming: One big JSON at the end
+> - Streaming: Much better perceived latency (tokens appear immediately)
+
+#### 🏆 Success Criteria
+- [ ] Both tests completed
+- [ ] Understand streaming vs non-streaming UX difference
 
 ---
 
-### Task 3.2: FP16 vs AWQ Benchmark
-**Tags**: `[Inference–Runtime]` `[Phase2-Quantization]`  
-**Time**: 30 min  
-**Win**: Quantified speedup and quality comparison
+### ✅ Task 3.5: Micro-Concurrency Test
+**Tags**: `[Concurrency]` `[Continuous Batching]`  
+**Time**: 20 min  
+**Win**: Observe continuous batching behavior with real numbers
 
-#### Lab Instructions
+#### 🔧 Lab Instructions
 
-First, let's also start the FP16 model for comparison:
-
-```bash
-# Start FP16 model on different port (if you have enough VRAM)
-# Or do sequential testing
-pkill -f "vllm serve"
-
-# We'll benchmark AWQ first, then FP16
-```
-
-Create comprehensive benchmark:
+Create a concurrency test script:
 
 ```bash
-cat > ~/quantization_benchmark.py << 'EOF'
+cat > ~/scripts/tier03_concurrency_test.py << 'EOF'
 import requests
-import time
-import json
-import subprocess
-
-def get_gpu_memory():
-    result = subprocess.run(
-        ['nvidia-smi', '--query-gpu=memory.used', '--format=csv,noheader,nounits'],
-        capture_output=True, text=True
-    )
-    return int(result.stdout.strip())
-
-def benchmark_model(base_url, model_name, num_requests=10, max_tokens=100):
-    prompts = [
-        "Explain the concept of machine learning in simple terms.",
-        "What is the difference between AI and ML?",
-        "How does gradient descent work?",
-        "Explain neural networks briefly.",
-        "What is overfitting?",
-        "Describe the transformer architecture.",
-        "What is attention in deep learning?",
-        "Explain backpropagation.",
-        "What are embeddings?",
-        "Describe transfer learning."
-    ][:num_requests]
-    
-    results = []
-    for prompt in prompts:
-        start = time.time()
-        r = requests.post(f"{base_url}/v1/chat/completions", json={
-            "model": model_name,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": max_tokens
-        })
-        elapsed = time.time() - start
-        
-        data = r.json()
-        tokens = data["usage"]["completion_tokens"]
-        results.append({
-            "elapsed": elapsed,
-            "tokens": tokens,
-            "tok_per_sec": tokens / elapsed
-        })
-    
-    avg_tok_per_sec = sum(r["tok_per_sec"] for r in results) / len(results)
-    gpu_mem = get_gpu_memory()
-    
-    return {
-        "model": model_name,
-        "avg_tok_per_sec": avg_tok_per_sec,
-        "gpu_memory_mb": gpu_mem,
-        "results": results
-    }
-
-# Benchmark AWQ model
-print("=" * 60)
-print("QUANTIZATION BENCHMARK")
-print("=" * 60)
-
-awq_results = benchmark_model(
-    "http://localhost:8000",
-    "TheBloke/Llama-2-7B-Chat-AWQ"
-)
-print(f"\nAWQ (INT4):")
-print(f"  Throughput: {awq_results['avg_tok_per_sec']:.1f} tok/s")
-print(f"  GPU Memory: {awq_results['gpu_memory_mb']} MB")
-
-# Save AWQ results
-with open("/root/artifacts/awq_benchmark.json", "w") as f:
-    json.dump(awq_results, f, indent=2)
-
-print("\nAWQ results saved. Now restart with FP16 model to compare.")
-print("Run: pkill -f 'vllm serve' && vllm serve meta-llama/Llama-2-7b-chat-hf --port 8000")
-EOF
-```
-
-```bash
-# Benchmark AWQ
-python3 ~/quantization_benchmark.py
-```
-
-Now test FP16 (requires stopping AWQ server):
-
-```bash
-# Stop AWQ server
-pkill -f "vllm serve"
-
-# Start FP16 model
-vllm serve meta-llama/Llama-2-7b-chat-hf \
-  --port 8000 \
-  --gpu-memory-utilization 0.90 \
-  2>&1 | tee ~/artifacts/vllm_fp16_startup.log &
-
-sleep 45
-
-# Benchmark FP16
-cat > ~/benchmark_fp16.py << 'EOF'
-import requests
-import time
-import json
-import subprocess
-
-def get_gpu_memory():
-    result = subprocess.run(
-        ['nvidia-smi', '--query-gpu=memory.used', '--format=csv,noheader,nounits'],
-        capture_output=True, text=True
-    )
-    return int(result.stdout.strip())
-
-prompts = [
-    "Explain the concept of machine learning in simple terms.",
-    "What is the difference between AI and ML?",
-    "How does gradient descent work?",
-    "Explain neural networks briefly.",
-    "What is overfitting?",
-]
-
-results = []
-for prompt in prompts:
-    start = time.time()
-    r = requests.post("http://localhost:8000/v1/chat/completions", json={
-        "model": "meta-llama/Llama-2-7b-chat-hf",
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 100
-    })
-    elapsed = time.time() - start
-    data = r.json()
-    tokens = data["usage"]["completion_tokens"]
-    results.append({"elapsed": elapsed, "tokens": tokens, "tok_per_sec": tokens / elapsed})
-
-avg_tok = sum(r["tok_per_sec"] for r in results) / len(results)
-gpu_mem = get_gpu_memory()
-
-print(f"\nFP16:")
-print(f"  Throughput: {avg_tok:.1f} tok/s")
-print(f"  GPU Memory: {gpu_mem} MB")
-
-# Load AWQ results and compare
-with open("/root/artifacts/awq_benchmark.json") as f:
-    awq = json.load(f)
-
-print(f"\n{'='*60}")
-print("COMPARISON: AWQ vs FP16")
-print(f"{'='*60}")
-print(f"AWQ (INT4): {awq['avg_tok_per_sec']:.1f} tok/s, {awq['gpu_memory_mb']} MB")
-print(f"FP16:       {avg_tok:.1f} tok/s, {gpu_mem} MB")
-print(f"\nMemory savings: {(1 - awq['gpu_memory_mb']/gpu_mem)*100:.0f}%")
-speedup = awq['avg_tok_per_sec'] / avg_tok if avg_tok > 0 else 0
-print(f"Throughput change: {speedup:.2f}x")
-
-# Save comparison
-with open("/root/artifacts/quantization_comparison.json", "w") as f:
-    json.dump({
-        "awq": awq,
-        "fp16": {"avg_tok_per_sec": avg_tok, "gpu_memory_mb": gpu_mem, "results": results},
-        "memory_savings_pct": (1 - awq['gpu_memory_mb']/gpu_mem)*100,
-        "speedup": speedup
-    }, f, indent=2)
-EOF
-
-python3 ~/benchmark_fp16.py
-```
-
-#### Success Criteria
-- [ ] Both models benchmarked
-- [ ] AWQ uses ~50-70% less memory
-- [ ] AWQ similar or better throughput (memory-bound → faster)
-
----
-
-### Task 3.3: vLLM Configuration Deep Dive
-**Tags**: `[Inference–Runtime]` `[Phase3-Optimization]`  
-**Time**: 45 min  
-**Win**: Understand key vLLM flags and their impact
-
-#### Learn First
-- [vLLM Engine Arguments](https://docs.vllm.ai/en/latest/models/engine_args.html)
-
-Key parameters to understand:
-- `--gpu-memory-utilization`: How much VRAM to use (0.0-1.0)
-- `--max-model-len`: Maximum sequence length
-- `--max-num-seqs`: Maximum concurrent sequences
-- `--enforce-eager`: Disable CUDA graphs (for debugging)
-
-#### Lab Instructions
-
-```bash
-pkill -f "vllm serve"
-
-# Experiment 1: Low memory utilization
-echo "Test 1: gpu-memory-utilization=0.5"
-vllm serve TheBloke/Llama-2-7B-Chat-AWQ \
-  --port 8000 \
-  --quantization awq \
-  --gpu-memory-utilization 0.5 \
-  --max-num-seqs 8 &
-sleep 30
-
-curl -s -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "TheBloke/Llama-2-7B-Chat-AWQ", "messages": [{"role": "user", "content": "Test"}], "max_tokens": 10}' > /dev/null
-
-nvidia-smi --query-gpu=memory.used --format=csv,noheader | tee ~/artifacts/config_test1.txt
-pkill -f "vllm serve"
-sleep 5
-
-# Experiment 2: High memory utilization
-echo "Test 2: gpu-memory-utilization=0.95"
-vllm serve TheBloke/Llama-2-7B-Chat-AWQ \
-  --port 8000 \
-  --quantization awq \
-  --gpu-memory-utilization 0.95 \
-  --max-num-seqs 32 &
-sleep 30
-
-curl -s -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "TheBloke/Llama-2-7B-Chat-AWQ", "messages": [{"role": "user", "content": "Test"}], "max_tokens": 10}' > /dev/null
-
-nvidia-smi --query-gpu=memory.used --format=csv,noheader | tee ~/artifacts/config_test2.txt
-```
-
-Create a configuration test script:
-
-```bash
-cat > ~/config_benchmark.py << 'EOF'
-import requests
-import time
-import json
 import concurrent.futures
+import time
+import statistics
 
-def concurrent_test(num_requests=20):
-    """Test throughput with concurrent requests"""
-    def single_request(i):
-        start = time.time()
-        r = requests.post("http://localhost:8000/v1/chat/completions", json={
-            "model": "TheBloke/Llama-2-7B-Chat-AWQ",
-            "messages": [{"role": "user", "content": f"Question {i}: Explain briefly."}],
-            "max_tokens": 50
-        })
-        return time.time() - start
-    
+URL = "http://localhost:8000/v1/completions"
+MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
+
+def one_request(i: int) -> float:
     start = time.time()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=num_requests) as ex:
-        latencies = list(ex.map(single_request, range(num_requests)))
-    total_time = time.time() - start
-    
+    r = requests.post(URL, json={
+        "model": MODEL,
+        "prompt": f"Concurrency test request {i}: explain briefly.",
+        "max_tokens": 64
+    })
+    _ = r.json()
+    return time.time() - start
+
+def run_concurrency_test(num_clients: int):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_clients) as ex:
+        latencies = list(ex.map(one_request, range(num_clients)))
     return {
-        "total_time": total_time,
-        "throughput_req_per_sec": num_requests / total_time,
-        "mean_latency": sum(latencies) / len(latencies)
+        "clients": num_clients,
+        "mean_latency": statistics.mean(latencies),
+        "p95_latency": sorted(latencies)[int(0.95 * len(latencies))] if len(latencies) > 1 else latencies[0],
+        "min_latency": min(latencies),
+        "max_latency": max(latencies),
     }
 
-result = concurrent_test(20)
-print(f"Throughput: {result['throughput_req_per_sec']:.2f} req/s")
-print(f"Mean latency: {result['mean_latency']:.2f}s")
+if __name__ == "__main__":
+    print("=" * 60)
+    print("CONCURRENCY TEST")
+    print("=" * 60)
+    for clients in [1, 4, 8, 16]:
+        res = run_concurrency_test(clients)
+        print(f"{clients:2d} clients → "
+              f"mean={res['mean_latency']:.2f}s, "
+              f"p95={res['p95_latency']:.2f}s, "
+              f"min={res['min_latency']:.2f}s, "
+              f"max={res['max_latency']:.2f}s")
 EOF
-
-python3 ~/config_benchmark.py | tee ~/artifacts/high_util_benchmark.txt
 ```
 
-#### Success Criteria
-- [ ] Understand how `gpu-memory-utilization` affects memory
-- [ ] Higher utilization → more KV cache → more concurrent requests
-- [ ] Document findings in notes
+Run it:
+
+```bash
+python3 ~/scripts/tier03_concurrency_test.py | tee ~/artifacts/tier03_concurrency.txt
+```
+
+> 🧠 **What to look for:**
+> - 1 client → baseline single-request latency
+> - 4 clients → small latency increase, good throughput
+> - 8/16 clients → vLLM batching kicks in; latency increases but total work done is much higher
+
+This gives you your first concrete feeling of "how many users can this GPU handle concurrently?"
+
+#### 🏆 Success Criteria
+- [ ] Concurrency test completed
+- [ ] Results saved
+- [ ] Understand batching behavior
 
 ---
 
-### Task 3.4: Production-Ready Configuration
-**Tags**: `[Inference–Runtime]` `[Phase3-Optimization]` `[Business]`  
-**Time**: 30 min  
-**Win**: A documented, optimized configuration for a real use case
+### ✅ Task 3.6: Create Baseline Prod Config Script
+**Tags**: `[Runtime]` `[Ops]`  
+**Time**: 10 min  
+**Win**: A single command you trust as your default SLM server
 
-#### Lab Instructions
-
-Create two production configs:
+#### 🔧 Lab Instructions
 
 ```bash
 mkdir -p ~/configs
 
-# Config 1: Latency-optimized (for chat applications)
-cat > ~/configs/latency_optimized.sh << 'EOF'
+cat > ~/configs/qwen2p5_slm_baseline.sh << 'EOF'
 #!/bin/bash
-# Latency-Optimized Configuration
-# Use case: Chat applications, interactive use
-# Priority: Low TTFT, consistent response times
+# Qwen2.5-1.5B Instruct – Baseline Serving Config (16GB GPU)
+# Optimized for: Chat/interactive use with moderate concurrency
 
-vllm serve TheBloke/Llama-2-7B-Chat-AWQ \
+export HF_HUB_ENABLE_HF_TRANSFER=0
+
+vllm serve Qwen/Qwen2.5-1.5B-Instruct \
   --port 8000 \
-  --quantization awq \
-  --gpu-memory-utilization 0.85 \
-  --max-num-seqs 16 \
-  --max-model-len 2048 \
-  --disable-log-requests
-EOF
-
-# Config 2: Throughput-optimized (for batch processing)
-cat > ~/configs/throughput_optimized.sh << 'EOF'
-#!/bin/bash
-# Throughput-Optimized Configuration
-# Use case: Batch processing, offline tasks
-# Priority: Maximum requests per second
-
-vllm serve TheBloke/Llama-2-7B-Chat-AWQ \
-  --port 8000 \
-  --quantization awq \
-  --gpu-memory-utilization 0.95 \
-  --max-num-seqs 64 \
+  --gpu-memory-utilization 0.8 \
   --max-model-len 4096 \
+  --max-num-seqs 16 \
   --disable-log-requests
 EOF
 
-chmod +x ~/configs/*.sh
+chmod +x ~/configs/qwen2p5_slm_baseline.sh
 ```
 
-Document your findings:
+Now your "prod-ish" SLM server is literally:
 
 ```bash
-cat > ~/artifacts/day02_config_guide.md << 'EOF'
-# vLLM Configuration Guide - Day 02 Findings
-
-## Hardware
-- GPU: RTX 4090 (24GB)
-- Model: Llama-2-7B-Chat-AWQ (INT4)
-
-## Key Parameters Tested
-
-### gpu-memory-utilization
-- 0.5: ~12GB used, conservative, good for debugging
-- 0.85: ~20GB used, balanced for production
-- 0.95: ~22GB used, maximum throughput
-
-### max-num-seqs
-- 8: Low concurrency, lower latency
-- 16: Balanced
-- 32-64: High throughput, higher latency per request
-
-## Recommended Configurations
-
-### Chat/Interactive (latency-sensitive)
-```
---gpu-memory-utilization 0.85
---max-num-seqs 16
---max-model-len 2048
+~/configs/qwen2p5_slm_baseline.sh
 ```
 
-### Batch Processing (throughput-sensitive)
-```
---gpu-memory-utilization 0.95
---max-num-seqs 64
---max-model-len 4096
-```
+**This is exactly how a real inference engineer works.**
 
-## Benchmark Results
-- AWQ vs FP16: ~60% memory savings
-- Throughput: [YOUR NUMBERS] tok/s
-- Concurrent requests: [YOUR NUMBERS] req/s at 20 concurrent
-EOF
-```
-
-#### Success Criteria
-- [ ] Two production configs created
-- [ ] Configuration guide documented
-- [ ] You can explain when to use each config
+#### 🏆 Success Criteria
+- [ ] Config script created
+- [ ] Script is executable
+- [ ] You understand every flag
 
 ---
 
 ## Tier 3 Summary
 
-| Task | Status | Key Finding |
-|------|--------|-------------|
-| 3.1 AWQ Model | ⬜ | ~4-5GB memory usage |
-| 3.2 FP16 vs AWQ | ⬜ | XX% memory savings |
-| 3.3 Config Deep Dive | ⬜ | Understand key params |
-| 3.4 Production Config | ⬜ | 2 documented configs |
+| Task | What You Did | Status |
+|------|--------------|--------|
+| **3.1** | Capture baseline settings | ⬜ |
+| **3.2** | gpu-memory-utilization sweep | ⬜ |
+| **3.3** | max-model-len vs KV cache | ⬜ |
+| **3.4** | Latency & streaming check | ⬜ |
+| **3.5** | Concurrency test | ⬜ |
+| **3.6** | Create prod config | ⬜ |
 
-**Key Learning**: Quantization gives massive memory savings with minimal quality loss. Configuration tuning depends on use case (latency vs throughput).
+### Artifacts Created
+```
+~/artifacts/
+├── tier03_baseline.log
+├── tier03_notes.md
+├── tier03-util/
+│   ├── vllm_util_0.3.log
+│   ├── vllm_util_0.6.log
+│   └── vllm_util_0.9.log
+├── tier03-maxlen-4096.log
+├── tier03-tuned.log
+└── tier03_concurrency.txt
 
-**Commit after Tier 3:**
-```bash
-cd ~/artifacts
-git add .
-git commit -m "day02-tier3: AWQ quantization (XX% memory savings) + production configs"
+~/configs/
+└── qwen2p5_slm_baseline.sh
 ```
 
 ---
 
-**→ Continue to [Tier 4](LOG_tier04.md) for the Boss Challenge: Full Case Study**
+## 🎉 Tier 3 Complete!
+
+By finishing this 2-hour block, you've:
+
+- ✅ Mapped how `gpu-memory-utilization` changes KV cache size & concurrency
+- ✅ Seen how `max-model-len` is a capacity lever
+- ✅ Felt the difference between streaming vs non-streaming
+- ✅ Observed continuous batching with concurrent loads
+- ✅ Written a baseline serving config script for Qwen2.5-1.5B on a 16GB GPU
+
+**This is the foundation for:**
+- **Tier 4**: Quantization (AWQ / GPTQ) for larger models
+- **Larger models**: Qwen2.5-3B, Llama-3.x-8B
+- **Multi-GPU / distributed** serving later
+
+---
+
+## 🔜 Next Step
+
+When you're ready, continue to Tier 4:
+
+**→ [LOG_tier04.md](LOG_tier04.md)** – Quantization & larger models
