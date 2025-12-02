@@ -1,608 +1,316 @@
-# Day 002 – Tier 4: BOSS CHALLENGE 🏆
+# Day 002 – GPU Node Bring-Up on RunPod
+## Tier 4: Inference Readiness Report (Chapter Conclusion)
 
 > **Prerequisites**: Complete [Tier 1](LOG_tier01.md), [Tier 2](LOG_tier02.md), and [Tier 3](LOG_tier03.md)  
-> **Goal**: Create a complete, publishable case study showing your optimization journey  
-> **End State**: A professional case study document with before/after metrics, ready to share
+> **Goal**: Produce a professional readiness document summarizing your GPU node + vLLM setup  
+> **End State**: A single Markdown file documenting everything: hardware, software, configs, measurements, next steps  
+> **Time**: 30–45 min
 
 ---
 
-## 🎯 The Challenge
+## 🎯 Why This Tier?
 
-**Create a consulting-style case study**: "Optimizing LLM Inference: From 30 tok/s to 150+ tok/s"
+Day 002 is fundamentally about:
+- ✅ Bringing up GPU hardware
+- ✅ Validating the CUDA stack
+- ✅ Installing vLLM
+- ✅ Configuring basic serving
+- ✅ Understanding vLLM runtime behavior
 
-This is what separates a hobbyist from a professional. You will:
-1. Define a realistic client scenario
-2. Document baseline performance
-3. Apply optimizations systematically
-4. Quantify improvements
-5. Package findings professionally
+To **close this chapter professionally**, you must produce:
+- A summary of what is now working
+- A clear baseline config for serving SLMs
+- A single well-structured "Inference Readiness Report"
+- A short set of next-step recommendations
 
----
-
-## 📚 Pre-Reading (15 min)
-
-| Resource | Why | Time |
-|----------|-----|------|
-| [How to Write a Case Study](https://blog.hubspot.com/marketing/how-to-write-case-study) | Structure for business impact | 5 min |
-| [Anyscale LLM Perf Blog](https://www.anyscale.com/blog/llm-performance-benchmark) | Example of professional benchmarking | 10 min |
-
-#### 📂 Example Case Studies to Model
-- [vLLM Performance Blog](https://blog.vllm.ai/2023/06/20/vllm.html)
-- [TensorRT-LLM Benchmarks](https://github.com/NVIDIA/TensorRT-LLM/blob/main/docs/source/blogs/H100vsA100.md)
+> 💡 **Not** heavy benchmarking. **Not** quantization. **Not** a case study.  
+> Those belong to Phase 1 & Phase 2 (Days 16–55).  
+> You're still in **Phase 0** (Days 1–15): OS + GPU + minimal inference stack verification.
 
 ---
 
-## Tier 4 – Boss Challenge (~2-3 hours)
+## Tier 4 Tasks (~45 min)
 
 ---
 
-### ✅ Task 4.1: Define the Client Scenario
-**Tags**: `[Business]` `[Phase3-Optimization]`  
+### ✅ Task 4.1: Create `inference_readiness_report.md`
+**Tags**: `[Documentation]` `[Deliverable]`  
 **Time**: 20 min  
-**Win**: Clear problem statement that sounds like a real consulting engagement
+**Win**: A professional document summarizing Days 001–002
 
 #### 🔧 Lab Instructions
 
 ```bash
-cat > ~/artifacts/case_study.md << 'EOF'
-# Case Study: Optimizing LLM Inference for Production Chat
+cat > ~/artifacts/inference_readiness_report.md << 'EOF'
+# Inference Readiness Report (Day 002)
 
-## Executive Summary
-[FILL IN AT END]
-
-## Client Scenario
-
-**Company**: TechStartup Inc. (fictional)  
-**Use Case**: Customer support chatbot  
-**Requirements**:
-- Model: Llama-2-7B equivalent quality
-- Latency: < 2 seconds time-to-first-token
-- Throughput: Support 50+ concurrent users
-- Budget: Single RTX 4090 GPU ($2000)
-- Uptime: 99.9%
-
-**Current State** (Before Optimization):
-- Using HuggingFace Transformers with default settings
-- Throughput: ~X req/s at 10 concurrent users
-- Memory: 14GB VRAM
-- Cost: Can only serve ~Y concurrent users
-
-**Goal**:
-- 5x throughput improvement
-- 50% memory reduction
-- Same or better quality
+*Environment: RunPod RTX 2000 Ada / Ubuntu 24.04 / vLLM 0.11.2*  
+*Date: [INSERT DATE]*
 
 ---
 
-## Methodology
+## 1. Hardware & OS Validation
 
-### Phase 1: Baseline Measurement
-[FILL IN]
+| Component | Status | Details |
+|-----------|--------|---------|
+| GPU | ✅ Verified | NVIDIA RTX 2000 Ada (16GB VRAM) |
+| Driver | ✅ Verified | `nvidia-smi` working |
+| CUDA Runtime | ✅ Verified | CUDA 12.x (Torch 2.8.0+cu128) |
+| cuDNN | ✅ Enabled | Bundled with PyTorch |
+| BF16 Support | ✅ Verified | Tensor cores active |
 
-### Phase 2: Runtime Optimization (vLLM)
-[FILL IN]
-
-### Phase 3: Quantization (AWQ)
-[FILL IN]
-
-### Phase 4: Configuration Tuning
-[FILL IN]
-
----
-
-## Results
-
-### Before vs After Comparison
-
-| Metric | Before (HF) | After (vLLM+AWQ) | Improvement |
-|--------|-------------|------------------|-------------|
-| Single Request Latency | X sec | Y sec | Z% faster |
-| Throughput (10 concurrent) | X req/s | Y req/s | Zx |
-| Throughput (20 concurrent) | X req/s | Y req/s | Zx |
-| GPU Memory | X GB | Y GB | Z% less |
-| Max Concurrent Users | X | Y | Zx |
-
-### Key Findings
-1. [FILL IN]
-2. [FILL IN]
-3. [FILL IN]
+**GPU Health Check:**
+- `nvidia-smi`: GPU detected, memory accessible
+- 8000×8000 GEMM test: Passed
 
 ---
 
-## Recommendations
+## 2. vLLM Installation
 
-### Immediate Actions
-1. Switch from HuggingFace to vLLM
-2. Use AWQ quantization
-3. Configure for throughput: `--gpu-memory-utilization 0.95 --max-num-seqs 64`
-
-### Future Optimizations
-1. Consider speculative decoding for latency-sensitive paths
-2. Evaluate tensor parallelism if scaling to multiple GPUs
-3. Implement proper monitoring with Prometheus/Grafana
+| Component | Status | Details |
+|-----------|--------|---------|
+| vLLM Version | ✅ Installed | 0.11.2 |
+| Install Method | pip | `pip install vllm` |
+| Import Test | ✅ Passed | `import vllm` successful |
+| Server Startup | ✅ Passed | API server launches cleanly |
 
 ---
 
-## ROI Analysis
+## 3. Model Serving Baseline
 
-**Hardware Cost**: $2000 (RTX 4090)
-**Throughput Improvement**: Xx
-**Effective Cost Reduction**: From $Y/1M tokens to $Z/1M tokens
-
----
-
-## Appendix
-
-### A. Benchmark Scripts
-See `~/artifacts/` for all benchmark code.
-
-### B. Configuration Files
-See `~/configs/` for production-ready configurations.
-
-### C. Raw Data
-See `~/artifacts/*.json` for all benchmark results.
-EOF
-```
-
-#### 🏆 Success Criteria
-- [ ] Case study template created
-- [ ] Client scenario is realistic and relatable
+| Metric | Value |
+|--------|-------|
+| Model | Qwen/Qwen2.5-1.5B-Instruct |
+| Precision | BF16 |
+| Load Time | ~15 seconds (cached) |
+| Serving Endpoint | http://0.0.0.0:8000 |
+| Streaming | ✅ Working |
+| First Inference | ✅ Successful |
 
 ---
 
-### ✅ Task 4.2: Run Complete Benchmark Suite
-**Tags**: `[Inference–Runtime]` `[Phase3-Optimization]`  
-**Time**: 45 min  
-**Win**: All numbers collected for case study
+## 4. Memory & KV Cache Profile
 
-#### 🔧 Lab Instructions
+| Metric | Value |
+|--------|-------|
+| gpu-memory-utilization | 0.6 (baseline) |
+| Model Weights | ~2.9 GiB |
+| Available KV Cache | ~5.0 GiB |
+| KV Cache Capacity | ~188,000 tokens |
+| CUDA Graphs | ~0.5 GiB |
+| Max Concurrency @ 32k | ~5.75x |
+| Max Concurrency @ 4k | ~46x (after tuning) |
 
-Create a comprehensive benchmark that tests everything:
+---
+
+## 5. Runtime Behavior (Tier 3 Findings)
+
+### Tested Configurations
+
+| gpu-memory-utilization | KV Cache GiB | Max Concurrency (32k) |
+|------------------------|-------------:|----------------------:|
+| 0.3 | [YOUR VALUE] | [YOUR VALUE] |
+| 0.6 | 5.03 GiB | 5.75x |
+| 0.9 | [YOUR VALUE] | [YOUR VALUE] |
+
+### Key Observations
+
+- **Continuous batching**: Observed – latency increases slightly, throughput scales well
+- **Streaming TTFT**: ~50–150ms (first token arrives quickly)
+- **Non-streaming latency**: ~1–3s (prompt-dependent)
+- **Prefill/Decode phases**: Understood from logs
+- **Chunked prefill**: Enabled with max_num_batched_tokens=2048
+
+---
+
+## 6. Baseline Production Config
 
 ```bash
-cat > ~/full_benchmark_suite.py << 'EOF'
-#!/usr/bin/env python3
-"""
-Complete Benchmark Suite for Day 02 Case Study
-Tests: HF baseline, vLLM FP16, vLLM AWQ at multiple concurrency levels
-"""
+#!/bin/bash
+# Qwen2.5-1.5B Instruct – Baseline Serving Config (16GB GPU)
 
-import requests
-import time
-import json
-import subprocess
-import concurrent.futures
-import statistics
-import os
+export HF_HUB_ENABLE_HF_TRANSFER=0
 
-RESULTS = {}
-
-def get_gpu_memory():
-    result = subprocess.run(
-        ['nvidia-smi', '--query-gpu=memory.used', '--format=csv,noheader,nounits'],
-        capture_output=True, text=True
-    )
-    return int(result.stdout.strip())
-
-def run_concurrent_test(url, model, num_requests, max_tokens=50):
-    """Run concurrent requests and measure throughput"""
-    
-    def single_request(i):
-        prompt = f"Question {i}: Explain this concept briefly in 2-3 sentences."
-        start = time.time()
-        try:
-            r = requests.post(f"{url}/v1/chat/completions", json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": max_tokens
-            }, timeout=120)
-            elapsed = time.time() - start
-            data = r.json()
-            tokens = data.get("usage", {}).get("completion_tokens", max_tokens)
-            return {"success": True, "elapsed": elapsed, "tokens": tokens}
-        except Exception as e:
-            return {"success": False, "error": str(e), "elapsed": time.time() - start}
-    
-    start = time.time()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=num_requests) as ex:
-        results = list(ex.map(single_request, range(num_requests)))
-    total_time = time.time() - start
-    
-    successful = [r for r in results if r["success"]]
-    if not successful:
-        return None
-    
-    latencies = [r["elapsed"] for r in successful]
-    total_tokens = sum(r["tokens"] for r in successful)
-    
-    return {
-        "num_requests": num_requests,
-        "successful": len(successful),
-        "failed": num_requests - len(successful),
-        "total_time": total_time,
-        "throughput_req_per_sec": len(successful) / total_time,
-        "throughput_tok_per_sec": total_tokens / total_time,
-        "mean_latency": statistics.mean(latencies),
-        "p50_latency": statistics.median(latencies),
-        "p95_latency": sorted(latencies)[int(len(latencies)*0.95)] if len(latencies) > 1 else latencies[0],
-        "gpu_memory_mb": get_gpu_memory()
-    }
-
-def test_configuration(name, url, model, concurrency_levels=[1, 5, 10, 20, 30]):
-    """Test a configuration at multiple concurrency levels"""
-    print(f"\n{'='*70}")
-    print(f"Testing: {name}")
-    print(f"{'='*70}")
-    
-    results = {"name": name, "model": model, "tests": {}}
-    
-    for n in concurrency_levels:
-        print(f"  Concurrency {n}...", end=" ", flush=True)
-        result = run_concurrent_test(url, model, n)
-        if result:
-            results["tests"][n] = result
-            print(f"{result['throughput_req_per_sec']:.2f} req/s, "
-                  f"{result['throughput_tok_per_sec']:.1f} tok/s, "
-                  f"p95={result['p95_latency']:.2f}s")
-        else:
-            print("FAILED")
-    
-    return results
-
-# Main benchmark execution
-if __name__ == "__main__":
-    print("=" * 70)
-    print("COMPLETE BENCHMARK SUITE - Day 02 Case Study")
-    print("=" * 70)
-    
-    all_results = {}
-    
-    # Test 1: vLLM with AWQ (assuming it's running on port 8000)
-    print("\n[1/2] Testing vLLM + AWQ...")
-    try:
-        awq_results = test_configuration(
-            "vLLM + AWQ (INT4)",
-            "http://localhost:8000",
-            "TheBloke/Llama-2-7B-Chat-AWQ",
-            [1, 5, 10, 20]
-        )
-        all_results["vllm_awq"] = awq_results
-    except Exception as e:
-        print(f"  ERROR: {e}")
-    
-    # Save intermediate results
-    with open("/root/artifacts/full_benchmark_results.json", "w") as f:
-        json.dump(all_results, f, indent=2)
-    
-    # Print summary
-    print("\n" + "=" * 70)
-    print("BENCHMARK COMPLETE - Results saved to ~/artifacts/full_benchmark_results.json")
-    print("=" * 70)
-    
-    # Generate summary table
-    print("\nSUMMARY TABLE:")
-    print("-" * 70)
-    print(f"{'Config':<25} {'Concurrency':<12} {'Throughput':<15} {'P95 Latency':<12}")
-    print("-" * 70)
-    
-    for config_name, config_data in all_results.items():
-        for conc, test in config_data.get("tests", {}).items():
-            print(f"{config_name:<25} {conc:<12} "
-                  f"{test['throughput_req_per_sec']:.2f} req/s{'':<5} "
-                  f"{test['p95_latency']:.2f}s")
-EOF
-
-chmod +x ~/full_benchmark_suite.py
-```
-
-Make sure vLLM with AWQ is running, then execute:
-
-```bash
-# Ensure AWQ model is running
-pkill -f "vllm serve"
-vllm serve TheBloke/Llama-2-7B-Chat-AWQ \
+vllm serve Qwen/Qwen2.5-1.5B-Instruct \
   --port 8000 \
-  --quantization awq \
-  --gpu-memory-utilization 0.95 \
-  --max-num-seqs 64 &
-
-sleep 45
-
-# Run full benchmark
-python3 ~/full_benchmark_suite.py 2>&1 | tee ~/artifacts/full_benchmark.log
+  --gpu-memory-utilization 0.8 \
+  --max-model-len 4096 \
+  --max-num-seqs 16 \
+  --disable-log-requests
 ```
 
-#### 🏆 Success Criteria
-- [ ] All benchmark configurations tested
-- [ ] Results saved to JSON
-- [ ] Summary table generated
+**Why these values:**
+- `0.8` utilization: Good balance of KV cache vs safety margin
+- `4096` max-model-len: Typical chat context, increases concurrency to ~46x
+- `16` max-num-seqs: Reasonable for chat workloads
+- `disable-log-requests`: Cleaner logs in production
 
 ---
 
-### ✅ Task 4.3: Create Visualization Dashboard
-**Tags**: `[Business]` `[Phase3-Optimization]`  
-**Time**: 30 min  
-**Win**: Professional charts for your case study
+## 7. Next Steps (Future Chapters)
+
+### Short-Term (Phase 0 → Continue)
+- [ ] Test AWQ quantization on larger models
+- [ ] Serve 3B model (Qwen2.5-3B)
+- [ ] Measure TTFT + throughput systematically
+
+### Medium-Term (Phase 1: Days 16–35)
+- [ ] Compare HF Transformers vs vLLM on same hardware
+- [ ] Long-context evaluation (8k–32k tokens)
+- [ ] Benchmark batch vs streaming modes
+
+### Long-Term (Phase 2–3)
+- [ ] Quantization deep dive (AWQ, GPTQ, FP8)
+- [ ] Speculative decoding
+- [ ] Custom Triton kernels
+- [ ] Tensor parallelism (multi-GPU)
+
+---
+
+## 8. Final Statement
+
+✅ **This GPU node is now fully "Inference Ready":**
+
+| Layer | Status |
+|-------|--------|
+| Drivers | ✅ Validated |
+| CUDA Stack | ✅ Validated |
+| vLLM Stack | ✅ Validated |
+| Model Serving | ✅ Successful |
+| Runtime Tuning | ✅ Completed |
+
+**This concludes Day 002 (GPU Bring-Up + Minimal Inference).**
+
+---
+
+*Report generated as part of 100 Days of Inference Engineering*
+EOF
+
+echo "✅ Inference Readiness Report created: ~/artifacts/inference_readiness_report.md"
+```
+
+#### 🏆 Success Criteria
+- [ ] Report created with all sections filled
+- [ ] Your actual values from Tier 3 experiments included
+- [ ] Document is shareable and professional
+
+---
+
+### ✅ Task 4.2: Update Values with Your Real Data
+**Tags**: `[Documentation]`  
+**Time**: 10 min  
+**Win**: Report reflects your actual measurements
+
+#### 🔧 Lab Instructions
+
+Open the report and fill in your actual values from Tier 3:
+
+```bash
+# View your Tier 3 logs to get real values
+cat ~/artifacts/tier03_baseline.log | grep -E "(KV cache|concurrency|memory)"
+
+# Edit the report with your values
+nano ~/artifacts/inference_readiness_report.md
+# Or use: vi ~/artifacts/inference_readiness_report.md
+```
+
+**Values to update:**
+- Your GPU model (if different)
+- KV cache values from 0.3 and 0.9 sweeps
+- Any other measurements you collected
+
+---
+
+### ✅ Task 4.3: Commit & Close the Chapter
+**Tags**: `[Git]` `[Ops]`  
+**Time**: 5 min  
+**Win**: Clean git history, chapter complete
 
 #### 🔧 Lab Instructions
 
 ```bash
-cat > ~/create_charts.py << 'EOF'
-import json
-import matplotlib.pyplot as plt
-import numpy as np
+cd ~/artifacts
 
-# Load results
-with open("/root/artifacts/full_benchmark_results.json") as f:
-    data = json.load(f)
+# Review what you're committing
+ls -la
 
-# Also load comparison data if available
-try:
-    with open("/root/artifacts/concurrent_benchmark.json") as f:
-        comparison_data = json.load(f)
-except:
-    comparison_data = None
+# Stage and commit
+git add .
+git commit -m "Day 002 complete: GPU bring-up + vLLM serving + runtime tuning + readiness report"
 
-# Chart 1: Throughput comparison at different concurrency
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-# If we have HF vs vLLM comparison data
-if comparison_data:
-    concurrency = sorted([int(k) for k in comparison_data.keys()])
-    hf_throughput = [comparison_data[str(c)]["hf"]["throughput_req_per_sec"] for c in concurrency]
-    vllm_throughput = [comparison_data[str(c)]["vllm"]["throughput_req_per_sec"] for c in concurrency]
-    
-    ax = axes[0]
-    x = np.arange(len(concurrency))
-    width = 0.35
-    ax.bar(x - width/2, hf_throughput, width, label='HuggingFace', color='#e74c3c')
-    ax.bar(x + width/2, vllm_throughput, width, label='vLLM', color='#2ecc71')
-    ax.set_xlabel('Concurrent Requests')
-    ax.set_ylabel('Throughput (req/s)')
-    ax.set_title('HuggingFace vs vLLM Throughput')
-    ax.set_xticks(x)
-    ax.set_xticklabels(concurrency)
-    ax.legend()
-    ax.grid(axis='y', alpha=0.3)
-
-# Throughput scaling chart
-if "vllm_awq" in data:
-    awq_data = data["vllm_awq"]["tests"]
-    concurrency = sorted([int(k) for k in awq_data.keys()])
-    throughput = [awq_data[str(c)]["throughput_req_per_sec"] for c in concurrency]
-    latency = [awq_data[str(c)]["p95_latency"] for c in concurrency]
-    
-    ax = axes[1]
-    ax.plot(concurrency, throughput, 'o-', color='#3498db', linewidth=2, markersize=8)
-    ax.set_xlabel('Concurrent Requests')
-    ax.set_ylabel('Throughput (req/s)')
-    ax.set_title('vLLM + AWQ: Throughput Scaling')
-    ax.grid(True, alpha=0.3)
-
-plt.tight_layout()
-plt.savefig('/root/artifacts/case_study_charts.png', dpi=150, bbox_inches='tight')
-print("Charts saved to ~/artifacts/case_study_charts.png")
-
-# Chart 2: Memory comparison
-fig, ax = plt.subplots(figsize=(8, 5))
-
-memory_data = {
-    'HuggingFace\n(FP16)': 14000,  # Approximate
-    'vLLM\n(FP16)': 14000,  # Approximate
-    'vLLM + AWQ\n(INT4)': 5000,  # From our tests
-}
-
-# Try to get actual memory from benchmarks
-try:
-    with open("/root/artifacts/quantization_comparison.json") as f:
-        quant_data = json.load(f)
-    memory_data['vLLM\n(FP16)'] = quant_data['fp16']['gpu_memory_mb']
-    memory_data['vLLM + AWQ\n(INT4)'] = quant_data['awq']['gpu_memory_mb']
-except:
-    pass
-
-colors = ['#e74c3c', '#f39c12', '#2ecc71']
-bars = ax.bar(memory_data.keys(), memory_data.values(), color=colors)
-ax.set_ylabel('GPU Memory (MB)')
-ax.set_title('Memory Usage Comparison')
-ax.grid(axis='y', alpha=0.3)
-
-# Add value labels
-for bar, val in zip(bars, memory_data.values()):
-    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 200, 
-            f'{val/1000:.1f}GB', ha='center', va='bottom', fontweight='bold')
-
-plt.tight_layout()
-plt.savefig('/root/artifacts/memory_comparison.png', dpi=150, bbox_inches='tight')
-print("Memory chart saved to ~/artifacts/memory_comparison.png")
-EOF
-
-python3 ~/create_charts.py
+# Push if you have a remote
+# git push
 ```
 
-#### 🏆 Success Criteria
-- [ ] Throughput comparison chart generated
-- [ ] Memory comparison chart generated
-- [ ] Charts are professional quality
-
 ---
 
-### ✅ Task 4.4: Complete the Case Study Document
-**Tags**: `[Business]` `[Phase4-Ship]`  
-**Time**: 45 min  
-**Win**: A complete, shareable case study
+## Tier 4 Summary
 
-#### 🔧 Lab Instructions
-
-Update your case study with real numbers:
-
-```bash
-cat > ~/finalize_case_study.py << 'EOF'
-import json
-
-# Load all benchmark data
-try:
-    with open("/root/artifacts/full_benchmark_results.json") as f:
-        full_results = json.load(f)
-except:
-    full_results = {}
-
-try:
-    with open("/root/artifacts/concurrent_benchmark.json") as f:
-        comparison = json.load(f)
-except:
-    comparison = {}
-
-try:
-    with open("/root/artifacts/quantization_comparison.json") as f:
-        quant = json.load(f)
-except:
-    quant = {}
-
-# Extract key metrics
-hf_baseline = comparison.get("10", {}).get("hf", {})
-vllm_optimized = comparison.get("10", {}).get("vllm", {})
-
-print("=" * 70)
-print("CASE STUDY KEY METRICS")
-print("=" * 70)
-
-print("\nBEFORE (HuggingFace):")
-if hf_baseline:
-    print(f"  Throughput at 10 concurrent: {hf_baseline.get('throughput_req_per_sec', 'N/A'):.2f} req/s")
-    print(f"  Mean latency: {hf_baseline.get('mean_latency', 'N/A'):.2f}s")
-
-print("\nAFTER (vLLM + AWQ):")
-if vllm_optimized:
-    print(f"  Throughput at 10 concurrent: {vllm_optimized.get('throughput_req_per_sec', 'N/A'):.2f} req/s")
-    print(f"  Mean latency: {vllm_optimized.get('mean_latency', 'N/A'):.2f}s")
-
-if hf_baseline and vllm_optimized:
-    speedup = vllm_optimized.get('throughput_req_per_sec', 1) / max(hf_baseline.get('throughput_req_per_sec', 1), 0.01)
-    print(f"\nSPEEDUP: {speedup:.1f}x throughput improvement")
-
-if quant:
-    print(f"\nMEMORY SAVINGS: {quant.get('memory_savings_pct', 'N/A'):.0f}%")
-
-print("\n" + "=" * 70)
-print("Copy these numbers into your case_study.md!")
-print("=" * 70)
-EOF
-
-python3 ~/finalize_case_study.py
-```
-
-Now manually update `~/artifacts/case_study.md` with your real numbers, then create the final version:
-
-```bash
-# Add executive summary
-cat >> ~/artifacts/case_study.md << 'EOF'
-
----
-
-## Final Notes
-
-### What We Learned
-1. **vLLM's continuous batching** provides massive throughput improvements at high concurrency
-2. **AWQ quantization** reduces memory by ~60% with minimal quality loss
-3. **Configuration tuning** (gpu-memory-utilization, max-num-seqs) is critical for production
-
-### Tools & Technologies Used
-- RunPod (GPU cloud)
-- vLLM (inference engine)
-- AWQ (quantization)
-- Python (benchmarking)
-- Matplotlib (visualization)
-
-### Time Investment
-- Tier 1: ~2 hours (setup + baseline)
-- Tier 2: ~2 hours (HF vs vLLM comparison)
-- Tier 3: ~2-3 hours (quantization + config)
-- Tier 4: ~2-3 hours (case study)
-- **Total: 8-10 hours**
-
-### Cost
-- RunPod RTX 4090: ~$0.44/hr × 10 hrs = ~$4.40
-- Total learning cost: < $5
-
----
-
-*Case study created as part of 100 Days of Inference Engineering*
-*Day 002 - GPU Node Bring-Up on RunPod*
-EOF
-
-echo "Case study finalized! See ~/artifacts/case_study.md"
-```
-
-#### 🏆 Success Criteria
-- [ ] All metrics filled in with real numbers
-- [ ] Executive summary written
-- [ ] Recommendations are actionable
-- [ ] Document is ready to share
-
----
-
-## 🏆 Day 02 Complete!
-
-### Final Checklist
-
-| Tier | Status | Key Achievement |
-|------|--------|-----------------|
-| Tier 1 | ⬜ | RunPod setup, Llama-3-8B running, baseline benchmark |
-| Tier 2 | ⬜ | HF vs vLLM comparison, continuous batching understood |
-| Tier 3 | ⬜ | AWQ quantization, production configs |
-| Tier 4 | ⬜ | Complete case study with charts |
+| Task | What You Did | Status |
+|------|--------------|--------|
+| **4.1** | Create inference_readiness_report.md | ⬜ |
+| **4.2** | Fill in real values from experiments | ⬜ |
+| **4.3** | Commit everything | ⬜ |
 
 ### Artifacts Created
 ```
 ~/artifacts/
-├── nvidia_smi_*.txt          # GPU state snapshots
-├── benchmark_baseline.json    # Tier 1 benchmarks
-├── single_request_comparison.json
-├── concurrent_benchmark.json  # HF vs vLLM
-├── hf_vs_vllm_throughput.png # Chart
-├── awq_benchmark.json        # Quantization results
-├── quantization_comparison.json
-├── full_benchmark_results.json
-├── case_study_charts.png
-├── memory_comparison.png
-├── case_study.md             # THE FINAL DELIVERABLE
-└── day02_config_guide.md
+├── tier02-lite/
+│   └── sample_response.json
+├── tier03_baseline.log
+├── tier03_notes.md
+├── tier03-util/
+│   ├── vllm_util_0.3.log
+│   ├── vllm_util_0.6.log
+│   └── vllm_util_0.9.log
+├── tier03_concurrency.txt
+└── inference_readiness_report.md  ← THE FINAL DELIVERABLE
 
 ~/configs/
-├── latency_optimized.sh
-└── throughput_optimized.sh
+└── qwen2p5_slm_baseline.sh
 ```
-
-### Final Commit
-```bash
-cd ~/artifacts
-git add .
-git commit -m "day02-complete: Full case study - HF to vLLM+AWQ optimization (Xx speedup)"
-git push  # If you have a remote
-```
-
-### What You Achieved Today
-
-You went from **zero** to:
-1. ✅ Running a production LLM on cloud GPU
-2. ✅ Understanding why vLLM beats HuggingFace (continuous batching)
-3. ✅ Applying quantization for 60%+ memory savings
-4. ✅ Creating production-ready configurations
-5. ✅ Writing a professional case study
-
-**This is exactly what a top 1% inference engineer does.**
 
 ---
 
-## 📚 Evening Reading (Optional)
+## 🎉 Day 002 Complete!
 
-| Resource | Why |
-|----------|-----|
-| [vLLM Paper](https://arxiv.org/abs/2309.06180) | Deep dive into PagedAttention |
-| [FlashAttention Paper](https://arxiv.org/abs/2205.14135) | Next optimization to understand |
-| [Speculative Decoding](https://arxiv.org/abs/2211.17192) | Advanced latency optimization |
+By finishing this chapter, you've:
+
+- ✅ **Tier 1**: Validated GPU hardware, drivers, CUDA stack
+- ✅ **Tier 2**: Installed vLLM, served your first model, sent inference
+- ✅ **Tier 3**: Understood KV cache, memory utilization, concurrency tradeoffs
+- ✅ **Tier 4**: Produced a professional Inference Readiness Report
+
+### What You Now Have
+
+| Asset | Purpose |
+|-------|---------|
+| Working GPU node | Ready for any inference workload |
+| vLLM baseline config | Production-ready SLM serving |
+| Runtime tuning knowledge | Capacity planning for real apps |
+| Readiness report | Shareable documentation |
+
+### Chapter Narrative Complete
+
+```
+OS → CUDA → vLLM → Tuning → Conclusions
+```
+
+This is exactly how a professional inference engineer documents system bring-up.
 
 ---
 
-**→ Tomorrow (Day 003)**: Speculative Decoding & Streaming Optimization
+## 🔜 Next Step
+
+When you're ready, continue to Day 003:
+
+**Topics for future chapters:**
+- Quantization (AWQ, GPTQ)
+- Larger models (3B, 7B, 8B)
+- HuggingFace vs vLLM comparison benchmarks
+- Speculative decoding
+- Multi-GPU serving
+
+---
+
+*Day 002 concluded. GPU node is inference-ready.* 🚀
