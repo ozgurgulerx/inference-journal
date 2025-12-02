@@ -85,6 +85,8 @@ vllm serve Qwen/Qwen2.5-1.5B-Instruct \
   --gpu-memory-utilization 0.6
 ```
 
+> ⚠️ **Why disable HF_TRANSFER?** RunPod's base image enables HuggingFace fast-transfer by default but does not include the Rust `hf_transfer` package. Disabling it prevents a startup crash.
+
 > 🔍 **What's happening:**  
 > - `--gpu-memory-utilization 0.6` controls how much VRAM vLLM pre-allocates for KV cache  
 > - Model loading takes ~60 seconds (first run includes compilation)  
