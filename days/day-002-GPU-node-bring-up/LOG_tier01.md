@@ -1,8 +1,10 @@
-# Day 002 – GPU Node Bring-Up on RunPod (From Scratch)
+# Day 002 – GPU Node Bring-Up on RunPod
+## Tier 1: GPU Stack Verification
 
-> **Goal**: Bring up a GPU node from bare Ubuntu – understand every layer of the stack.  
+> **Goal**: Bring up a GPU node and understand every layer of the stack.  
 > **End State**: GPU fully verified and inference-ready (drivers, CUDA, health checks complete)  
-> **GPU**: NVIDIA T4 or RTX 2000 Ada (both 16GB) – affordable cloud GPUs for learning
+> **GPU**: NVIDIA T4 or RTX 2000 Ada (both 16GB) – affordable cloud GPUs for learning  
+> **Time**: ~1.5 hours
 
 ---
 
@@ -84,24 +86,26 @@ The exact IP and port are displayed in the RunPod dashboard under your pod's con
 
 ---
 
-## Tier 1 – GPU Node Bring-Up (~2 hours)
+## Tier 1 Tasks (~1.5 hours)
 
 **Objective**: Launch a GPU pod, verify drivers, understand the CUDA stack, and complete GPU health checks.
 
 **What You'll Do:**
 1. Launch pod & SSH in
-2. Check OS
-3. Install essential packages
-4. Driver verification
-5. CUDA stack understanding
-6. GPU health checks (6 tests)
+2. Verify OS and GPU accessibility
+3. (Optional) Install essential packages
+4. Verify NVIDIA drivers work
+5. Understand the CUDA stack (Driver vs Runtime vs Toolkit)
+6. Complete GPU health checks (6 tests)
 
 ---
 
-### ✅ Task 1.1: Launch Bare Ubuntu VM with GPU
+### ✅ Task 1.1: Launch a GPU-Enabled Ubuntu Container
 **Tags**: `[OS–Linux]` `[OS-01]`  
 **Time**: 15 min  
-**Win**: SSH into a fresh Ubuntu box with GPU attached (but no drivers yet!)
+**Win**: SSH into a running GPU container and verify GPU is accessible
+
+> **Important**: RunPod pods are **not bare-metal VMs** – they are GPU-enabled container images. Even the minimal "Ubuntu" template includes NVIDIA drivers and CUDA runtime pre-installed. Your job in Tier 1 is to **verify** the GPU stack, not install it.
 
 #### 📖 Learn First
 - [RunPod GPU Types](https://www.runpod.io/gpu-instance/pricing) – T4/RTX 2000 Ada are ~$0.15-0.20/hr
@@ -112,26 +116,31 @@ The exact IP and port are displayed in the RunPod dashboard under your pod's con
 
 1. **Create account** at [runpod.io](https://runpod.io) and add credits ($5-10)
 
-2. **Deploy a BARE Ubuntu Pod** (not a pre-configured template):
+2. **Deploy a minimal Ubuntu Pod**:
    - Go to **Pods** → **Deploy**
    - Click **"Customize Deployment"** or select a minimal template
-   - Template: **`runpod/ubuntu`** (bare Ubuntu 24.04, no CUDA pre-installed)
+   - Template: **`runpod/ubuntu`** (Ubuntu 24.04 with GPU drivers auto-provisioned)
    - GPU: **RTX 2000 Ada** or **T4** (both 16GB, ~$0.15-0.20/hr)
-   - Container Disk: **30 GB** (need space for CUDA + models)
-   - Volume Disk: **50 GB** (persistent storage for models)
+   - Container Disk: **30 GB** (space for models)
+   - Volume Disk: **50 GB** (persistent storage)
    - Click **Deploy**
+
+> **Note**: RunPod injects NVIDIA drivers and CUDA runtime at container startup. This is why `nvidia-smi` works immediately – it's expected behavior, not an error!
 
 3. **Connect via Web Terminal or SSH**:
 
 ```bash
+# Option 1: Web Terminal (easiest)
 # From RunPod UI: Click "Connect" → "Start Web Terminal"
-# Or use SSH command from pod details
+
+# Option 2: SSH (see SSH Key Setup section above)
+ssh -i ~/.ssh/id_runpod root@<pod-ip> -p <port>
 ```
 
-4. **Verify you're on bare Ubuntu** (GPU not yet accessible):
+4. **Verify the OS**:
 
 ```bash
-# Check OS
+# Check OS version
 cat /etc/os-release
 ```
 
@@ -142,8 +151,9 @@ NAME="Ubuntu"
 VERSION_ID="24.04"
 ```
 
+5. **Verify GPU is accessible** (should work immediately):
+
 ```bash
-# Check if nvidia-smi works (it should NOT work yet, or show basic info)
 nvidia-smi
 ```
 
@@ -153,11 +163,7 @@ nvidia-smi
 > You'll use it constantly to: verify models loaded to GPU, check VRAM footprint (7B model ≈ 14-16GB), diagnose OOM errors, and spot memory leaks.  
 > **TL;DR**: `nvidia-smi` = the GPU truth meter. Run it to see "what is my GPU doing right now?"
 
-> **Note**: RunPod's Ubuntu images often include GPU drivers pre-installed in the container. If `nvidia-smi` works immediately, that's expected!
-
-**Two possible outcomes:**
-- ❌ **Fails or "NVIDIA-SMI has failed"** → Drivers not installed, proceed to Task 1.2
-- ✅ **Shows GPU info** → Drivers already installed! Skip to Task 1.4 (CUDA Stack Verification)
+**Expected outcome**: `nvidia-smi` shows your GPU with driver version and CUDA version. This confirms RunPod's auto-provisioning worked.
 
 ```bash
 # Check what GPU hardware is attached
@@ -175,7 +181,7 @@ Expected output like:
 #### 🏆 Success Criteria
 - [ ] SSH/terminal access to Ubuntu 24.04
 - [ ] `lspci` shows NVIDIA GPU attached (RTX 2000 Ada or T4)
-- [ ] `nvidia-smi` either fails or shows minimal info (drivers not fully set up)
+- [ ] `nvidia-smi` shows GPU with driver and CUDA version (auto-provisioned by RunPod)
 
 #### 📁 Artifacts
 ```bash
@@ -186,10 +192,12 @@ lspci | grep -i nvidia | tee ~/artifacts/gpu_hardware.txt
 
 ---
 
-### ✅ Task 1.2: System Update & Essential Packages
+### ✅ Task 1.2: System Update & Essential Packages (Optional)
 **Tags**: `[OS–Linux]` `[OS-01]`  
-**Time**: 15 min  
-**Win**: System fully updated with build tools ready
+**Time**: 10 min  
+**Win**: System updated with build tools ready
+
+> **Note**: RunPod containers typically have Python, pip, and common tools pre-installed. This step is optional but useful if you need additional packages or want to ensure everything is up-to-date.
 
 #### 📖 Learn First
 - [Ubuntu Package Management](https://ubuntu.com/server/docs/package-management)
@@ -233,72 +241,23 @@ echo "Kernel: $(uname -r)" | tee -a ~/artifacts/system_info.txt
 
 ---
 
-### ✅ Task 1.3: Verify NVIDIA Drivers (RunPod Pre-Installs Them)
+### ✅ Task 1.3: Verify NVIDIA Drivers
 **Tags**: `[OS–Linux]` `[OS-01]`  
-**Time**: 10 min  
+**Time**: 5 min  
 **Win**: `nvidia-smi` shows your GPU with driver version
 
-> **Note**: RunPod container images typically include NVIDIA drivers pre-installed. You will almost always just **verify** rather than install. The install instructions below are for bare-metal or custom images only.
+> **RunPod users**: Drivers are already installed. Just run `nvidia-smi` to verify.
 
 #### 📖 Learn First
-- [NVIDIA Driver Downloads](https://www.nvidia.com/download/index.aspx)
-- [Ubuntu NVIDIA Driver Install](https://ubuntu.com/server/docs/nvidia-drivers-installation)
-
-**Key Concept**: The driver is the bridge between Linux kernel and GPU hardware.
+- [NVIDIA Driver Downloads](https://www.nvidia.com/download/index.aspx) (reference only)
+- **Key Concept**: The driver is the bridge between Linux kernel and GPU hardware.
 
 #### 🔧 Lab Instructions
 
-**Method A: Ubuntu's driver manager (recommended)**
+**Step 1: Verify driver is working**
 
 ```bash
-# Check available drivers
-ubuntu-drivers devices
-```
-
-Expected output shows something like:
-```
-vendor   : NVIDIA Corporation
-model    : TU104GL [Tesla T4]
-driver   : nvidia-driver-535 - distro non-free recommended
-driver   : nvidia-driver-525 - distro non-free
-```
-
-```bash
-# Install the recommended driver
-sudo ubuntu-drivers autoinstall
-
-# OR install specific version
-sudo apt install -y nvidia-driver-535
-```
-
-**Method B: Manual install from NVIDIA (for learning)**
-
-```bash
-# Add NVIDIA package repository
-wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
-sudo dpkg -i cuda-keyring_1.1-1_all.deb
-sudo apt update
-
-# Install driver only
-sudo apt install -y nvidia-driver-535
-```
-
-**After installation:**
-
-```bash
-# Verify driver module is loaded
-lsmod | grep nvidia
-```
-
-If empty, the driver isn't loaded yet. May need reboot or:
-
-```bash
-# Load the driver module
-sudo modprobe nvidia
-```
-
-```bash
-# THE MOMENT OF TRUTH
+# This should work immediately on RunPod
 nvidia-smi
 ```
 
@@ -328,7 +287,7 @@ nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv | tee ~/art
 
 ---
 
-### ✅ Task 1.4: Understand the CUDA Stack (No Installation Needed on RunPod)
+### ✅ Task 1.4: Understand the CUDA Stack & Complete GPU Health Checks
 **Tags**: `[OS–Linux]` `[OS-01]`  
 **Time**: 15 min  
 **Win**: Understand driver vs runtime vs toolkit, verify CUDA works
