@@ -1,425 +1,340 @@
-# Day 002 – Tier 2: Concurrent Benchmarks & HF Comparison
+# Day 002 – GPU Node Bring-Up on RunPod
+## Tier 2 (Lite): Serve a Small LLM with vLLM
 
 > **Prerequisites**: Complete [Tier 1](LOG_tier01.md) first  
-> **Goal**: Understand why vLLM is faster than naive HuggingFace, measure concurrent request handling  
-> **End State**: Side-by-side benchmark showing vLLM's continuous batching advantage
+> **Goal**: Run your first vLLM server and generate your first GPU-powered inference  
+> **End State**: vLLM serving a lightweight model (SLM), verified with a curl request  
+> **Time**: ~45 minutes
 
 ---
 
-## 📚 Pre-Reading (20 min)
+## 📦 Prerequisites
 
-| Resource | Why | Time |
-|----------|-----|------|
-| [Continuous Batching Explained](https://www.anyscale.com/blog/continuous-batching-llm-inference) | Core concept that makes vLLM fast | 10 min |
-| [vLLM Blog: How it works](https://blog.vllm.ai/2023/06/20/vllm.html) | Official explanation of PagedAttention | 10 min |
+From Tier 1, you should already have:
 
-#### 🎥 Video (watch during breaks)
-- [vLLM Talk at Ray Summit](https://www.youtube.com/watch?v=80bIUggRJf4) - Deep dive into architecture (30 min)
+- ✅ Ubuntu 24.04 running on RunPod
+- ✅ NVIDIA driver working (`nvidia-smi`)
+- ✅ CUDA runtime functional (`torch.cuda.is_available()`)
 
----
-
-## Tier 2 – Extension Block (~2 hours)
-
-**Objective**: Compare vLLM vs HuggingFace, understand continuous batching with concurrent requests.
+That's all you need.
 
 ---
 
-### ✅ Task 2.1: Set Up HuggingFace Baseline Server
-**Tags**: `[Inference–Runtime]` `[Phase1-HF_vs_vLLM]`  
-**Time**: 25 min  
-**Win**: HF server running same model, ready for comparison
+## Tier 2 Tasks (~45 minutes)
 
-#### 📖 Learn First
-- [HuggingFace Text Generation](https://huggingface.co/docs/transformers/main_classes/text_generation)
-- Why HF is slower: No continuous batching, no PagedAttention, sequential processing
+---
+
+### ✅ Task 2.1: Install vLLM
+**Tags**: `[Inference–Setup]` `[vLLM]`  
+**Time**: 5 min  
+**Win**: vLLM installed successfully
 
 #### 🔧 Lab Instructions
 
-First, stop any running vLLM server:
 ```bash
-pkill -f "vllm serve"
+pip install vllm
 ```
 
-Create a simple HF-based server:
+Verify installation:
 
 ```bash
-cat > ~/hf_server.py << 'EOF'
-from flask import Flask, request, jsonify
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
-import time
-
-app = Flask(__name__)
-
-print("Loading Llama-3-8B with HuggingFace...")
-model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    torch_dtype=torch.float16,
-    device_map="cuda"
-)
-print("Model loaded!")
-
-@app.route("/v1/completions", methods=["POST"])
-def generate():
-    data = request.json
-    prompt = data.get("prompt", "Hello")
-    max_tokens = data.get("max_tokens", 100)
-    
-    inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
-    
-    start = time.time()
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=max_tokens,
-            do_sample=False,
-            pad_token_id=tokenizer.eos_token_id
-        )
-    elapsed = time.time() - start
-    
-    generated = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    output_tokens = len(outputs[0]) - len(inputs.input_ids[0])
-    
-    return jsonify({
-        "text": generated,
-        "usage": {"completion_tokens": output_tokens},
-        "elapsed_sec": elapsed
-    })
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8001, threaded=True)
-EOF
+python3 -c "import vllm; print(f'vLLM version: {vllm.__version__}')"
 ```
-
 ```bash
-pip install flask
-
-# Run HF server on port 8001
-python3 ~/hf_server.py 2>&1 | tee ~/artifacts/hf_server.log &
-
-# Wait for model to load
-sleep 60
-
-# Test it
-curl -X POST http://localhost:8001/v1/completions \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Explain KV cache:", "max_tokens": 50}'
+root@54e7a4f7bf73:/# python3 -c "import vllm; print(f'vLLM version: {vllm.__version__}')"
+vLLM version: 0.11.2
 ```
 
 #### 🏆 Success Criteria
-- [ ] HF server starts and loads model
-- [ ] Test request returns completion
-- [ ] Note: Will use ~16GB VRAM (same as vLLM)
+- [ ] `pip install vllm` completes without errors
+- [ ] vLLM imports successfully
 
 ---
 
-### ✅ Task 2.2: Head-to-Head Single Request Comparison
-**Tags**: `[Inference–Runtime]` `[Phase1-HF_vs_vLLM]`  
-**Time**: 20 min  
-**Win**: Direct comparison showing vLLM is faster even for single requests
+### ✅ Task 2.2: Choose a Small Model (SLM)
+**Tags**: `[Model-Selection]`  
+**Time**: 2 min  
+**Win**: Pick a model that loads fast and fits easily in VRAM
+
+#### Recommended Models (all 3–5GB VRAM)
+
+| Model | VRAM (FP16) | Notes |
+|-------|-------------|-------|
+| `Qwen/Qwen2.5-1.5B-Instruct` | ~3GB | Very fast, very capable ⭐ **Default** |
+| `google/gemma-2-2b-it` | ~4.5GB | High-quality 2B instruction-tuned |
+| `microsoft/phi-2` | ~2.5GB | Stable SLM, great for testing |
+
+**Default for this guide**: `Qwen/Qwen2.5-1.5B-Instruct`
+
+> 💡 These small models let you iterate quickly without waiting for large model downloads or worrying about VRAM limits.
+
+---
+
+### ✅ Task 2.3: Start vLLM Server
+**Tags**: `[Inference–Runtime]` `[vLLM]`  
+**Time**: 10 min  
+**Win**: vLLM serving model on port 8000
 
 #### 🔧 Lab Instructions
 
-Start vLLM server on different port:
 ```bash
-vllm serve meta-llama/Meta-Llama-3-8B-Instruct \
+export HF_HUB_ENABLE_HF_TRANSFER=0
+
+vllm serve Qwen/Qwen2.5-1.5B-Instruct \
   --port 8000 \
-  --gpu-memory-utilization 0.45 \
-  2>&1 | tee ~/artifacts/vllm_comparison.log &
-
-# Wait for startup
-sleep 45
+  --gpu-memory-utilization 0.6
 ```
 
-Create comparison benchmark:
+> 🔍 **What's happening:**  
+> - `--gpu-memory-utilization 0.6` controls how much VRAM vLLM pre-allocates for KV cache  
+> - Model loading takes ~60 seconds (first run includes compilation)  
+> - Leave the server running in this terminal
 
-```bash
-cat > ~/compare_single_request.py << 'EOF'
-import requests
-import time
-import json
+#### 📘 Deep Dive: What Happens When vLLM Loads a Model
 
-def benchmark_hf(prompt, max_tokens=100):
-    start = time.time()
-    r = requests.post("http://localhost:8001/v1/completions", json={
-        "prompt": prompt,
-        "max_tokens": max_tokens
-    })
-    elapsed = time.time() - start
-    data = r.json()
-    return {
-        "engine": "HuggingFace",
-        "elapsed": elapsed,
-        "tokens": data["usage"]["completion_tokens"],
-        "tok_per_sec": data["usage"]["completion_tokens"] / elapsed
-    }
+When you run the command above, vLLM performs **15 internal stages**. Here's exactly what happens:
 
-def benchmark_vllm(prompt, max_tokens=100):
-    start = time.time()
-    r = requests.post("http://localhost:8000/v1/completions", json={
-        "model": "meta-llama/Meta-Llama-3-8B-Instruct",
-        "prompt": prompt,
-        "max_tokens": max_tokens
-    })
-    elapsed = time.time() - start
-    data = r.json()
-    tokens = data["usage"]["completion_tokens"]
-    return {
-        "engine": "vLLM",
-        "elapsed": elapsed,
-        "tokens": tokens,
-        "tok_per_sec": tokens / elapsed
-    }
+<details>
+<summary><strong>Click to expand full startup trace</strong></summary>
 
-prompts = [
-    "Write a detailed explanation of how transformers work:",
-    "Explain the concept of attention mechanism in neural networks:",
-    "What are the key differences between GPT and BERT architectures?"
-]
-
-print("=" * 60)
-print("SINGLE REQUEST COMPARISON: HuggingFace vs vLLM")
-print("=" * 60)
-
-results = []
-for i, prompt in enumerate(prompts):
-    print(f"\nPrompt {i+1}: {prompt[:50]}...")
-    
-    hf_result = benchmark_hf(prompt, max_tokens=100)
-    print(f"  HF:   {hf_result['tok_per_sec']:.1f} tok/s ({hf_result['elapsed']:.2f}s)")
-    
-    vllm_result = benchmark_vllm(prompt, max_tokens=100)
-    print(f"  vLLM: {vllm_result['tok_per_sec']:.1f} tok/s ({vllm_result['elapsed']:.2f}s)")
-    
-    speedup = hf_result['elapsed'] / vllm_result['elapsed']
-    print(f"  → vLLM is {speedup:.1f}x faster")
-    
-    results.append({"prompt": prompt[:50], "hf": hf_result, "vllm": vllm_result, "speedup": speedup})
-
-# Save results
-with open("/root/artifacts/single_request_comparison.json", "w") as f:
-    json.dump(results, f, indent=2)
-
-print("\n" + "=" * 60)
-print(f"Average speedup: {sum(r['speedup'] for r in results)/len(results):.1f}x")
-print("=" * 60)
-EOF
+```
+INFO [...] vLLM API server version 0.11.2
+INFO [...] non-default args: {'model': 'Qwen/Qwen2.5-1.5B-Instruct', 'gpu_memory_utilization': 0.6}
+config.json: 100%|██████████| 660/660 [00:00<00:00, 6.54MB/s]
+INFO [...] Resolved architecture: Qwen2ForCausalLM
+INFO [...] Using max model len 32768
+tokenizer_config.json: 7.30kB [00:00, 23.4MB/s]
+vocab.json: 2.78MB [00:00, 19.9MB/s]
+merges.txt: 1.67MB [00:00, 53.9MB/s]
+tokenizer.json: 7.03MB [00:00, 95.7MB/s]
+INFO [...] Initializing a V1 LLM engine (v0.11.2) with config:
+    dtype=torch.bfloat16, max_seq_len=32768, enable_prefix_caching=True
+INFO [...] world_size=1 rank=0 backend=nccl
+INFO [...] Starting to load model Qwen/Qwen2.5-1.5B-Instruct...
+INFO [...] Valid backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION']
+INFO [...] Using FLASH_ATTN backend.
+model.safetensors: 100%|██████████| 3.09G/3.09G [00:15<00:00, 203MB/s]
+INFO [...] Loading weights took 2.46 seconds
+INFO [...] Model loading took 2.8871 GiB memory and 34.43 seconds
+INFO [...] Dynamo bytecode transform time: 3.62 s
+INFO [...] Compiling a graph for dynamic shape takes 11.47 s
+INFO [...] torch.compile takes 15.09 s in total
+INFO [...] Available KV cache memory: 5.03 GiB
+INFO [...] GPU KV cache size: 188,512 tokens
+INFO [...] Maximum concurrency for 32,768 tokens per request: 5.75x
+Capturing CUDA graphs (mixed prefill-decode): 100%|██████████| 51/51
+Capturing CUDA graphs (decode, FULL): 100%|██████████| 35/35
+INFO [...] Graph capturing finished in 4 secs, took 0.49 GiB
+INFO [...] init engine took 22.78 seconds
+INFO [...] Starting vLLM API server on http://0.0.0.0:8000
+INFO:     Application startup complete.
 ```
 
-```bash
-python3 ~/compare_single_request.py
-```
+</details>
+
+**Stage-by-Stage Breakdown:**
+
+| Stage | What Happens | Time |
+|-------|--------------|------|
+| **1. Environment** | `HF_HUB_ENABLE_HF_TRANSFER=0` disables Rust downloader (avoids crash) | instant |
+| **2. Config Download** | `config.json` (660B) – model architecture, hidden size, num layers | <1s |
+| **3. Architecture Resolution** | vLLM identifies `Qwen2ForCausalLM`, sets max_seq_len=32768 | <1s |
+| **4. Tokenizer Download** | `vocab.json`, `merges.txt`, `tokenizer.json` – BPE vocabulary | ~2s |
+| **5. Engine Init** | Creates scheduler, KV cache manager, attention backend selector | <1s |
+| **6. Distributed Init** | Sets DP/TP/PP ranks (single GPU = all rank 0) | <1s |
+| **7. Weights Download** | `model.safetensors` (3.09 GB) from HuggingFace | ~15s |
+| **8. Load to GPU** | Weights transferred to VRAM, BF16 conversion | ~2.5s |
+| **9. Attention Backend** | Tests FlashAttention, Flashinfer, Triton → picks fastest | <1s |
+| **10. Torch Compile** | TorchInductor fuses ops, generates optimized CUDA kernels | ~15s |
+| **11. KV Cache Alloc** | Reserves 5GB for key-value cache (~188K tokens capacity) | <1s |
+| **12. CUDA Graph Capture** | Freezes GPU execution paths into static graphs | ~4s |
+| **13. Warmup** | Runs test pass, preloads L2 cache | ~1s |
+| **14. API Server Start** | Uvicorn starts, routes registered | <1s |
+| **15. Ready** | `Application startup complete.` | — |
+
+**Files Downloaded from HuggingFace:**
+
+| File | Size | Purpose |
+|------|------|---------|
+| `config.json` | 660B | Model architecture definition |
+| `tokenizer_config.json` | 7.3KB | Tokenizer settings |
+| `vocab.json` | 2.78MB | BPE vocabulary (token → ID) |
+| `merges.txt` | 1.67MB | BPE merge rules |
+| `tokenizer.json` | 7.03MB | Fast tokenizer binary |
+| `generation_config.json` | 242B | Default sampling params |
+| `model.safetensors` | 3.09GB | Model weights |
+
+**VRAM Breakdown:**
+
+| Component | Memory |
+|-----------|--------|
+| Model weights | ~2.9 GB |
+| Torch compile cache | ~0.5 GB |
+| KV Cache | ~5.0 GB |
+| CUDA graphs | ~0.5 GB |
+| **Total** | ~9 GB / 16 GB |
 
 #### 🏆 Success Criteria
-- [ ] Both servers respond successfully
-- [ ] vLLM shows speedup (typically 1.5-3x for single requests)
-- [ ] Results saved to JSON
+- [ ] vLLM server starts without errors
+- [ ] Model loads successfully (~60 seconds first run)
+- [ ] Server listening on port 8000: `Starting vLLM API server on http://0.0.0.0:8000`
+- [ ] `Application startup complete.` printed
 
 ---
 
-### ✅ Task 2.3: Concurrent Requests – Where vLLM Really Shines
-**Tags**: `[Inference–Runtime]` `[Phase1-HF_vs_vLLM]`  
-**Time**: 30 min  
-**Win**: See continuous batching in action with 10+ concurrent requests
+### ✅ Task 2.4: Send Your First Inference Request
+**Tags**: `[Inference–Test]`  
+**Time**: 5 min  
+**Win**: First successful GPU inference 🎉
 
-#### 📖 Learn First
-This is the key insight:
-- **HF**: Processes requests one-by-one, GPU idle between batches
-- **vLLM**: Continuous batching - dynamically batches all active requests, GPU always busy
+#### 🔧 Lab Instructions
+
+Open a **second SSH session** to the same pod and run:
+
+```bash
+curl http://localhost:8000/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "prompt": "Explain what a GPU is in one sentence:",
+    "max_tokens": 50
+  }'
+```
+
+**Expected output:**
+```json
+{
+  "id": "cmpl-...",
+  "object": "text_completion",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "choices": [{
+    "index": 0,
+    "text": " A GPU, or Graphics Processing Unit, is a specialized chip designed to accelerate the processing of graphics and video data. It can perform multiple calculations simultaneously, making it ideal for tasks such as rendering 3D models, playing games, and performing complex simulations",
+    "finish_reason": "length"
+  }],
+  "usage": {
+    "prompt_tokens": 10,
+    "completion_tokens": 50,
+    "total_tokens": 60
+  }
+}
+```
+
+Check GPU utilization in the first terminal:
+```bash
+nvidia-smi
+```
+
+> 🔍 **What's happening inside the GPU:**  
+> - The prompt is tokenized and sent to the GPU  
+> - vLLM's PagedAttention manages the KV cache efficiently  
+> - Tensor Cores compute the forward pass  
+> - Tokens are generated autoregressively until `max_tokens`
+
+**🎉 You are now serving LLM inference. This is the milestone.**
+
+#### 🏆 Success Criteria
+- [ ] curl returns a valid JSON response
+- [ ] Response contains coherent text
+- [ ] `nvidia-smi` shows VRAM usage increased
+
+---
+
+### ✅ Task 2.5: (Optional) Enable Streaming
+**Tags**: `[Inference–Streaming]`  
+**Time**: 3 min  
+**Win**: See token-by-token output
 
 #### 🔧 Lab Instructions
 
 ```bash
-cat > ~/concurrent_benchmark.py << 'EOF'
-import requests
-import time
-import json
-import concurrent.futures
-import statistics
-
-def single_request_hf(prompt):
-    start = time.time()
-    try:
-        r = requests.post("http://localhost:8001/v1/completions", json={
-            "prompt": prompt,
-            "max_tokens": 50
-        }, timeout=120)
-        elapsed = time.time() - start
-        return {"success": True, "elapsed": elapsed}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-def single_request_vllm(prompt):
-    start = time.time()
-    try:
-        r = requests.post("http://localhost:8000/v1/completions", json={
-            "model": "meta-llama/Meta-Llama-3-8B-Instruct",
-            "prompt": prompt,
-            "max_tokens": 50
-        }, timeout=120)
-        elapsed = time.time() - start
-        return {"success": True, "elapsed": elapsed}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-def run_concurrent_benchmark(request_func, num_requests, label):
-    prompts = [f"Question {i}: Explain concept {i} briefly." for i in range(num_requests)]
-    
-    print(f"\n{label}: Sending {num_requests} concurrent requests...")
-    start = time.time()
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=num_requests) as executor:
-        results = list(executor.map(request_func, prompts))
-    
-    total_time = time.time() - start
-    successful = [r for r in results if r["success"]]
-    latencies = [r["elapsed"] for r in successful]
-    
-    return {
-        "total_time": total_time,
-        "successful": len(successful),
-        "failed": num_requests - len(successful),
-        "throughput_req_per_sec": len(successful) / total_time,
-        "mean_latency": statistics.mean(latencies) if latencies else 0,
-        "p95_latency": sorted(latencies)[int(len(latencies)*0.95)] if len(latencies) > 1 else 0
-    }
-
-print("=" * 70)
-print("CONCURRENT REQUEST BENCHMARK: HuggingFace vs vLLM")
-print("=" * 70)
-
-all_results = {}
-for num_concurrent in [1, 5, 10, 20]:
-    print(f"\n{'='*70}")
-    print(f"Testing with {num_concurrent} concurrent requests")
-    print(f"{'='*70}")
-    
-    # Test HF
-    hf_result = run_concurrent_benchmark(single_request_hf, num_concurrent, "HuggingFace")
-    print(f"  HF:   {hf_result['throughput_req_per_sec']:.2f} req/s, "
-          f"mean latency: {hf_result['mean_latency']:.2f}s, "
-          f"p95: {hf_result['p95_latency']:.2f}s")
-    
-    # Test vLLM
-    vllm_result = run_concurrent_benchmark(single_request_vllm, num_concurrent, "vLLM")
-    print(f"  vLLM: {vllm_result['throughput_req_per_sec']:.2f} req/s, "
-          f"mean latency: {vllm_result['mean_latency']:.2f}s, "
-          f"p95: {vllm_result['p95_latency']:.2f}s")
-    
-    if hf_result['throughput_req_per_sec'] > 0:
-        speedup = vllm_result['throughput_req_per_sec'] / hf_result['throughput_req_per_sec']
-        print(f"  → vLLM throughput is {speedup:.1f}x higher")
-    
-    all_results[num_concurrent] = {"hf": hf_result, "vllm": vllm_result}
-
-# Save results
-with open("/root/artifacts/concurrent_benchmark.json", "w") as f:
-    json.dump(all_results, f, indent=2)
-
-print("\n" + "=" * 70)
-print("KEY INSIGHT: vLLM's advantage grows with concurrency!")
-print("This is continuous batching in action.")
-print("=" * 70)
-EOF
+curl http://localhost:8000/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "prompt": "Explain KV cache in one sentence:",
+    "max_tokens": 50,
+    "stream": true
+  }'
 ```
 
-```bash
-python3 ~/concurrent_benchmark.py 2>&1 | tee ~/artifacts/concurrent_benchmark.log
-```
+You'll see chunks arriving progressively – this is how ChatGPT-style streaming works.
 
-#### 🏆 Success Criteria
-- [ ] Both engines handle concurrent requests
-- [ ] vLLM shows increasing advantage at higher concurrency (5x+ at 20 concurrent)
-- [ ] You understand WHY: continuous batching vs sequential processing
+> 🔍 **What's happening:**  
+> - Instead of waiting for all tokens, vLLM sends each token as it's generated  
+> - Server-Sent Events (SSE) stream the response  
+> - Lower perceived latency for users
 
 ---
 
-### ✅ Task 2.4: Visualize the Results
-**Tags**: `[Inference–Runtime]` `[Business]`  
-**Time**: 15 min  
-**Win**: A chart you can show to demonstrate vLLM's value
+### ✅ Task 2.6: Save Artifacts
+**Tags**: `[Artifacts]`  
+**Time**: 3 min  
+**Win**: Traceable proof of the first successful inference
 
 #### 🔧 Lab Instructions
 
 ```bash
-pip install matplotlib
+mkdir -p ~/artifacts/tier02-lite
 
-cat > ~/visualize_results.py << 'EOF'
-import json
-import matplotlib.pyplot as plt
+# Capture GPU state during serving
+nvidia-smi | tee ~/artifacts/tier02-lite/nvidia_smi_serving.txt
 
-# Load data
-with open("/root/artifacts/concurrent_benchmark.json") as f:
-    data = json.load(f)
+# Capture running processes
+ps aux | grep vllm | tee ~/artifacts/tier02-lite/vllm_process.txt
 
-concurrency = sorted([int(k) for k in data.keys()])
-hf_throughput = [data[str(c)]["hf"]["throughput_req_per_sec"] for c in concurrency]
-vllm_throughput = [data[str(c)]["vllm"]["throughput_req_per_sec"] for c in concurrency]
-
-# Create chart
-fig, ax = plt.subplots(figsize=(10, 6))
-x = range(len(concurrency))
-width = 0.35
-
-bars1 = ax.bar([i - width/2 for i in x], hf_throughput, width, label='HuggingFace', color='#ff6b6b')
-bars2 = ax.bar([i + width/2 for i in x], vllm_throughput, width, label='vLLM', color='#4ecdc4')
-
-ax.set_xlabel('Concurrent Requests')
-ax.set_ylabel('Throughput (requests/sec)')
-ax.set_title('vLLM vs HuggingFace: Throughput at Different Concurrency Levels\nLlama-3-8B on RTX 4090')
-ax.set_xticks(x)
-ax.set_xticklabels(concurrency)
-ax.legend()
-
-# Add speedup labels
-for i, (hf, vllm) in enumerate(zip(hf_throughput, vllm_throughput)):
-    if hf > 0:
-        speedup = vllm / hf
-        ax.annotate(f'{speedup:.1f}x', xy=(i, vllm), ha='center', va='bottom')
-
-plt.tight_layout()
-plt.savefig('/root/artifacts/hf_vs_vllm_throughput.png', dpi=150)
-print("Chart saved to ~/artifacts/hf_vs_vllm_throughput.png")
-EOF
+# Save a sample inference response
+curl -s http://localhost:8000/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "prompt": "What is inference optimization?",
+    "max_tokens": 50
+  }' | python3 -m json.tool | tee ~/artifacts/tier02-lite/sample_response.json
 ```
-
-```bash
-python3 ~/visualize_results.py
-```
-
-#### 🏆 Success Criteria
-- [ ] Chart generated showing clear vLLM advantage
-- [ ] Speedup numbers visible on chart
 
 ---
 
 ## Tier 2 Summary
 
-| Task | Status | Key Finding |
-|------|--------|-------------|
-| 2.1 HF Server Setup | ⬜ | HF baseline running |
-| 2.2 Single Request | ⬜ | vLLM ~Xx faster |
-| 2.3 Concurrent | ⬜ | vLLM ~Xx faster at 20 concurrent |
-| 2.4 Visualization | ⬜ | Chart shows scaling |
+| Task | What You Did | Status |
+|------|--------------|--------|
+| **2.1** | Install vLLM | ⬜ |
+| **2.2** | Choose small model | ⬜ |
+| **2.3** | Start vLLM server | ⬜ |
+| **2.4** | Send first inference | ⬜ |
+| **2.5** | (Optional) Streaming | ⬜ |
+| **2.6** | Save artifacts | ⬜ |
 
-**Key Learning**: vLLM's continuous batching gives **increasing returns** as concurrency grows. This is why it's used in production.
-
-**Commit after Tier 2:**
-```bash
-cd ~/artifacts
-git add .
-git commit -m "day02-tier2: HF vs vLLM comparison (Xx speedup at 20 concurrent)"
+### Artifacts Created
 ```
-
-**Cleanup:**
-```bash
-pkill -f "hf_server"
-pkill -f "vllm serve"
+~/artifacts/tier02-lite/
+├── nvidia_smi_serving.txt
+├── vllm_process.txt
+└── sample_response.json
 ```
 
 ---
 
-**→ Continue to [Tier 3](LOG_tier03.md) for vLLM configuration tuning and quantization**
+## 🎉 Tier 2 Complete!
+
+By finishing this, you have:
+
+- ✅ Installed vLLM
+- ✅ Served a small LLM locally
+- ✅ Sent your first inference request
+- ✅ Validated GPU-backed serving works
+- ✅ Saved artifacts for reproducibility
+
+**This is the foundation for:**
+- **Tier 3**: vLLM tuning (KV cache, block sizes, memory)
+- **Tier 4**: Quantization and performance optimization
+
+---
+
+## 🔜 Next Step
+
+When you're ready, continue to Tier 3:
+
+**→ [LOG_tier03.md](LOG_tier03.md)** – vLLM configuration tuning (your first real performance work)
 
