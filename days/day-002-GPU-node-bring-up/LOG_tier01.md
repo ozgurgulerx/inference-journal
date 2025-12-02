@@ -1,91 +1,377 @@
-# Day 002 – GPU Node Bring-Up on RunPod
+# Day 002 – GPU Node Bring-Up on RunPod (From Scratch)
 
-> **Goal**: Go from zero to serving a real LLM on RunPod, understanding every layer of the stack.  
-> **End State**: Serve Llama-3-8B with vLLM, measure baseline metrics, and understand why it's fast.
+> **Goal**: Build a complete LLM inference stack from a bare Ubuntu VM – install drivers, CUDA, and everything yourself.  
+> **End State**: Understand every layer: OS → Drivers → CUDA → Python → vLLM → LLM API  
+> **GPU**: NVIDIA T4 (16GB) – the workhorse of cloud inference
 
 ---
 
-## 📚 Pre-Reading (15 min before you start)
-
-Read these to understand what you're about to do:
+## 📚 Pre-Reading (20 min before you start)
 
 | Resource | Why | Time |
 |----------|-----|------|
-| [RunPod Quick Start](https://docs.runpod.io/pods/overview) | Understand pod types, billing, storage | 5 min |
-| [vLLM README](https://github.com/vllm-project/vllm) | See what vLLM claims to do | 5 min |
-| [PagedAttention Paper Abstract](https://arxiv.org/abs/2309.06180) | 1-paragraph context on why vLLM exists | 5 min |
+| [NVIDIA Driver vs CUDA Toolkit](https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/) | Understand driver/runtime relationship | 5 min |
+| [CUDA Installation Guide - Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/) | Official NVIDIA install docs | 10 min |
+| [Ubuntu NVIDIA Drivers](https://ubuntu.com/server/docs/nvidia-drivers-installation) | Ubuntu-specific driver install | 5 min |
+
+#### 📂 Key Concepts to Understand
+- **Kernel**: Linux core that talks to hardware
+- **Driver**: Software that lets kernel talk to GPU
+- **CUDA Toolkit**: Libraries + compiler for GPU programming
+- **cuDNN**: Deep learning primitives (convolutions, etc.)
 
 ---
 
-## Tier 1 – Must-Do Core Block (~2 hours)
+## Tier 1 – Must-Do Core Block (~3 hours)
 
-**Objective**: Get a GPU pod running, verify the stack, serve your first model.
+**Objective**: Start with bare Ubuntu, install everything manually, end with working LLM API.
 
 ---
 
-### ✅ Task 1.1: Create RunPod Account & Launch First Pod
+### ✅ Task 1.1: Launch Bare Ubuntu VM with T4 GPU
 **Tags**: `[OS–Linux]` `[OS-01]`  
-**Time**: 20 min  
-**Win**: You have SSH access to a GPU machine
+**Time**: 15 min  
+**Win**: SSH into a fresh Ubuntu box with GPU attached (but no drivers yet!)
 
 #### 📖 Learn First
-- [RunPod GPU Types & Pricing](https://www.runpod.io/gpu-instance/pricing)
-- Understand: RTX 3090 (24GB) vs RTX 4090 (24GB) vs A100 (40/80GB)
+- [RunPod GPU Types](https://www.runpod.io/gpu-instance/pricing) – T4 is ~$0.20/hr
+- [NVIDIA T4 Specs](https://www.nvidia.com/en-us/data-center/tesla-t4/) – 16GB VRAM, Turing architecture
 
 #### 🔧 Lab Instructions
 
-1. **Create account** at [runpod.io](https://runpod.io)
+1. **Create account** at [runpod.io](https://runpod.io) and add credits ($5-10)
 
-2. **Add credits** ($10-25 is enough for a full day of experimentation)
-
-3. **Deploy a GPU Pod**:
+2. **Deploy a BARE Ubuntu Pod** (not a pre-configured template):
    - Go to **Pods** → **Deploy**
-   - Select template: `RunPod Pytorch 2.1` (has CUDA + PyTorch pre-installed)
-   - GPU: **RTX 4090** (24GB VRAM, ~$0.44/hr) or **RTX 3090** (~$0.31/hr)
-   - Container Disk: **20 GB**
-   - Volume Disk: **50 GB** (for model weights)
+   - Click **"Customize Deployment"** or select a minimal template
+   - Template: **`runpod/ubuntu:22.04`** (bare Ubuntu, no CUDA pre-installed)
+   - GPU: **NVIDIA T4** (16GB, ~$0.20/hr) – cheapest option for learning
+   - Container Disk: **30 GB** (need space for CUDA + models)
+   - Volume Disk: **50 GB** (persistent storage for models)
    - Click **Deploy**
 
-4. **Connect via SSH or Web Terminal**:
+3. **Connect via Web Terminal or SSH**:
 
 ```bash
-# Option 1: Web Terminal (click "Connect" → "Start Web Terminal")
-# Option 2: SSH (copy the SSH command from pod details)
-ssh root@<pod-ip> -p <port> -i ~/.ssh/id_ed25519
+# From RunPod UI: Click "Connect" → "Start Web Terminal"
+# Or use SSH command from pod details
 ```
 
-5. **Verify GPU access**:
+4. **Verify you're on bare Ubuntu** (GPU not yet accessible):
 
 ```bash
+# Check OS
+cat /etc/os-release
+```
+
+Expected:
+```
+PRETTY_NAME="Ubuntu 22.04.x LTS"
+NAME="Ubuntu"
+VERSION_ID="22.04"
+```
+
+```bash
+# Check if nvidia-smi works (it should NOT work yet, or show basic info)
 nvidia-smi
 ```
 
-Expected output shows your GPU (e.g., RTX 4090, 24GB).
+If this fails or shows "NVIDIA-SMI has failed", **that's expected** – we need to install drivers!
+
+```bash
+# Check what GPU hardware is attached
+lspci | grep -i nvidia
+```
+
+Expected output like:
+```
+00:05.0 3D controller: NVIDIA Corporation TU104GL [Tesla T4] (rev a1)
+```
 
 #### 🏆 Success Criteria
-- [ ] `nvidia-smi` shows GPU with ~24GB VRAM
-- [ ] You can run commands in the terminal
+- [ ] SSH/terminal access to Ubuntu 22.04
+- [ ] `lspci` shows NVIDIA T4 attached
+- [ ] `nvidia-smi` either fails or shows minimal info (drivers not fully set up)
 
-#### 📁 Artifact
+#### 📁 Artifacts
 ```bash
-nvidia-smi | tee ~/artifacts/nvidia_smi_initial.txt
+mkdir -p ~/artifacts
+cat /etc/os-release | tee ~/artifacts/os_info.txt
+lspci | grep -i nvidia | tee ~/artifacts/gpu_hardware.txt
 ```
 
 ---
 
-### ✅ Task 1.2: Verify CUDA & PyTorch Stack  
+### ✅ Task 1.2: System Update & Essential Packages
 **Tags**: `[OS–Linux]` `[OS-01]`  
-**Time**: 10 min  
-**Win**: Confirmed GPU compute works end-to-end
+**Time**: 15 min  
+**Win**: System fully updated with build tools ready
+
+#### 📖 Learn First
+- [Ubuntu Package Management](https://ubuntu.com/server/docs/package-management)
+- Why we need `build-essential`: Compiling CUDA samples, kernel modules
 
 #### 🔧 Lab Instructions
 
 ```bash
-# Check CUDA version
-nvcc --version
+# Update package lists
+sudo apt update
 
-# Check PyTorch sees GPU
-python3 -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'GPU: {torch.cuda.get_device_name(0)}')"
+# Upgrade all packages (important for kernel compatibility)
+sudo apt upgrade -y
+
+# Install essential build tools
+sudo apt install -y \
+  build-essential \
+  dkms \
+  linux-headers-$(uname -r) \
+  git \
+  curl \
+  wget \
+  htop \
+  tmux \
+  vim
+
+# Check kernel version
+uname -r
+```
+
+Record system info:
+```bash
+uname -a | tee ~/artifacts/system_info.txt
+echo "Kernel: $(uname -r)" | tee -a ~/artifacts/system_info.txt
+```
+
+#### 🏆 Success Criteria
+- [ ] `apt update && apt upgrade` completes without errors
+- [ ] `build-essential` and `linux-headers` installed
+- [ ] Kernel version recorded
+
+---
+
+### ✅ Task 1.3: Install NVIDIA Drivers (The Hard Way)
+**Tags**: `[OS–Linux]` `[OS-01]`  
+**Time**: 25 min  
+**Win**: `nvidia-smi` shows your T4 with driver version
+
+#### 📖 Learn First
+- [NVIDIA Driver Downloads](https://www.nvidia.com/download/index.aspx)
+- [Ubuntu NVIDIA Driver Install](https://ubuntu.com/server/docs/nvidia-drivers-installation)
+
+**Key Concept**: The driver is the bridge between Linux kernel and GPU hardware.
+
+#### 🔧 Lab Instructions
+
+**Method A: Ubuntu's driver manager (recommended)**
+
+```bash
+# Check available drivers
+ubuntu-drivers devices
+```
+
+Expected output shows something like:
+```
+vendor   : NVIDIA Corporation
+model    : TU104GL [Tesla T4]
+driver   : nvidia-driver-535 - distro non-free recommended
+driver   : nvidia-driver-525 - distro non-free
+```
+
+```bash
+# Install the recommended driver
+sudo ubuntu-drivers autoinstall
+
+# OR install specific version
+sudo apt install -y nvidia-driver-535
+```
+
+**Method B: Manual install from NVIDIA (for learning)**
+
+```bash
+# Add NVIDIA package repository
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt update
+
+# Install driver only
+sudo apt install -y nvidia-driver-535
+```
+
+**After installation:**
+
+```bash
+# Verify driver module is loaded
+lsmod | grep nvidia
+```
+
+If empty, the driver isn't loaded yet. May need reboot or:
+
+```bash
+# Load the driver module
+sudo modprobe nvidia
+```
+
+```bash
+# THE MOMENT OF TRUTH
+nvidia-smi
+```
+
+Expected output:
+```
++-----------------------------------------------------------------------------+
+| NVIDIA-SMI 535.xxx       Driver Version: 535.xxx       CUDA Version: 12.x   |
+|-------------------------------+----------------------+----------------------+
+| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
+|===============================+======================+======================|
+|   0  Tesla T4            Off  | 00000000:00:05.0 Off |                    0 |
+| N/A   35C    P8     9W /  70W |      0MiB / 15360MiB |      0%      Default |
++-------------------------------+----------------------+----------------------+
+```
+
+#### 🏆 Success Criteria
+- [ ] `nvidia-smi` runs successfully
+- [ ] Shows Tesla T4 with 16GB (15360MiB) memory
+- [ ] Driver version displayed (e.g., 535.xxx)
+
+#### 📁 Artifacts
+```bash
+nvidia-smi | tee ~/artifacts/nvidia_smi_driver.txt
+nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv | tee ~/artifacts/gpu_info.csv
+```
+
+---
+
+### ✅ Task 1.4: Install CUDA Toolkit
+**Tags**: `[OS–Linux]` `[OS-01]`  
+**Time**: 20 min  
+**Win**: `nvcc --version` works, CUDA samples compile
+
+#### 📖 Learn First
+- [CUDA Toolkit Documentation](https://docs.nvidia.com/cuda/)
+- [CUDA Compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/)
+
+**Key Concepts**:
+- **CUDA Driver API**: Comes with nvidia-driver, low-level
+- **CUDA Runtime API**: Comes with cuda-toolkit, what most apps use
+- **nvcc**: NVIDIA CUDA Compiler
+
+#### 🔧 Lab Instructions
+
+```bash
+# Install CUDA toolkit (if you added NVIDIA repo earlier)
+sudo apt install -y cuda-toolkit-12-2
+
+# OR install full CUDA (includes drivers, use if drivers not installed)
+# sudo apt install -y cuda-12-2
+```
+
+```bash
+# Add CUDA to PATH
+echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
+echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
+source ~/.bashrc
+
+# Verify CUDA compiler
+nvcc --version
+```
+
+Expected:
+```
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2023 NVIDIA Corporation
+Built on ...
+Cuda compilation tools, release 12.2, V12.2.xxx
+```
+
+#### Compile a CUDA program (optional but educational)
+
+```bash
+mkdir -p ~/cuda-tests && cd ~/cuda-tests
+
+cat > hello_cuda.cu << 'EOF'
+#include <stdio.h>
+
+__global__ void hello() {
+    printf("Hello from GPU thread %d, block %d!\n", threadIdx.x, blockIdx.x);
+}
+
+int main() {
+    printf("Launching kernel...\n");
+    hello<<<2, 4>>>();  // 2 blocks, 4 threads each
+    cudaDeviceSynchronize();
+    printf("Done!\n");
+    return 0;
+}
+EOF
+
+nvcc hello_cuda.cu -o hello_cuda
+./hello_cuda
+```
+
+Expected output:
+```
+Launching kernel...
+Hello from GPU thread 0, block 0!
+Hello from GPU thread 1, block 0!
+...
+Done!
+```
+
+#### 🏆 Success Criteria
+- [ ] `nvcc --version` shows CUDA 12.x
+- [ ] Hello CUDA program compiles and runs
+- [ ] You understand: driver vs toolkit vs runtime
+
+#### 📁 Artifacts
+```bash
+nvcc --version | tee ~/artifacts/cuda_version.txt
+```
+
+---
+
+### ✅ Task 1.5: Install Python & Deep Learning Stack
+**Tags**: `[OS–Linux]` `[Inference–Runtime]`  
+**Time**: 20 min  
+**Win**: PyTorch sees your GPU, matrix multiply works
+
+#### 📖 Learn First
+- [PyTorch CUDA Installation](https://pytorch.org/get-started/locally/)
+- [Python venv](https://docs.python.org/3/library/venv.html)
+
+#### 🔧 Lab Instructions
+
+```bash
+# Install Python and pip
+sudo apt install -y python3 python3-pip python3-venv
+
+# Create virtual environment
+python3 -m venv ~/venv
+source ~/venv/bin/activate
+
+# Add to bashrc for persistence
+echo 'source ~/venv/bin/activate' >> ~/.bashrc
+
+# Upgrade pip
+pip install --upgrade pip
+```
+
+```bash
+# Install PyTorch with CUDA support
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+```
+
+```bash
+# Verify PyTorch sees GPU
+python3 << 'EOF'
+import torch
+print(f"PyTorch version: {torch.__version__}")
+print(f"CUDA available: {torch.cuda.is_available()}")
+print(f"CUDA version: {torch.version.cuda}")
+print(f"GPU count: {torch.cuda.device_count()}")
+print(f"GPU name: {torch.cuda.get_device_name(0)}")
+print(f"GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+EOF
 ```
 
 ```bash
@@ -94,36 +380,48 @@ python3 << 'EOF'
 import torch
 import time
 
-# Matrix multiplication benchmark
-size = 10000
-a = torch.randn(size, size, device='cuda')
-b = torch.randn(size, size, device='cuda')
+device = torch.device('cuda')
+size = 8000  # Smaller for T4
 
+a = torch.randn(size, size, device=device)
+b = torch.randn(size, size, device=device)
+
+# Warmup
+torch.matmul(a, b)
 torch.cuda.synchronize()
+
+# Benchmark
 start = time.time()
-c = torch.matmul(a, b)
+for _ in range(10):
+    c = torch.matmul(a, b)
 torch.cuda.synchronize()
 elapsed = time.time() - start
 
-tflops = (2 * size**3) / elapsed / 1e12
-print(f"Matrix multiply ({size}x{size}): {elapsed*1000:.1f}ms, {tflops:.1f} TFLOPS")
+tflops = (10 * 2 * size**3) / elapsed / 1e12
+print(f"Matrix multiply ({size}x{size}): {elapsed*1000:.1f}ms total, {tflops:.1f} TFLOPS")
 EOF
 ```
 
 #### 🏆 Success Criteria
 - [ ] PyTorch reports `CUDA available: True`
-- [ ] Matrix multiply runs without errors
-- [ ] You see TFLOPS output (RTX 4090 should hit ~80+ TFLOPS for FP32)
+- [ ] Shows Tesla T4 with ~16GB memory
+- [ ] Matrix multiply benchmark runs (T4 should show ~8-10 TFLOPS)
+
+#### 📁 Artifacts
+```bash
+python3 -c "import torch; print(f'PyTorch {torch.__version__}, CUDA {torch.version.cuda}')" | tee ~/artifacts/pytorch_info.txt
+```
 
 ---
 
-### ✅ Task 1.3: Install vLLM & Serve First Model (GPT-2)
+### ✅ Task 1.6: Install vLLM from Scratch
 **Tags**: `[Inference–Runtime]` `[Phase1-HF_vs_vLLM]`  
 **Time**: 15 min  
-**Win**: vLLM server running, responding to requests
+**Win**: vLLM installed and importable
 
 #### 📖 Learn First
-- [vLLM Quickstart](https://docs.vllm.ai/en/latest/getting_started/quickstart.html)
+- [vLLM Installation](https://docs.vllm.ai/en/latest/getting_started/installation.html)
+- [vLLM GitHub](https://github.com/vllm-project/vllm)
 
 #### 🔧 Lab Instructions
 
@@ -131,205 +429,206 @@ EOF
 # Install vLLM
 pip install vllm
 
-# Verify installation
-python3 -c "import vllm; print(f'vLLM version: {vllm.__version__}')"
+# This may take 5-10 minutes as it compiles some components
 ```
 
 ```bash
-# Start vLLM server with tiny model first (GPT-2, 124M params)
-vllm serve gpt2 --port 8000 &
+# Verify installation
+python3 << 'EOF'
+import vllm
+print(f"vLLM version: {vllm.__version__}")
 
-# Wait for server to start
-sleep 30
-
-# Test with curl
-curl -X POST http://localhost:8000/v1/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt2",
-    "prompt": "The future of AI inference is",
-    "max_tokens": 50
-  }'
+from vllm import LLM
+print("vLLM LLM class imported successfully!")
+EOF
 ```
 
 #### 🏆 Success Criteria
-- [ ] vLLM server starts without errors
-- [ ] curl returns a completion
-- [ ] You see "The future of AI inference is..." + generated text
-
-```bash
-# Stop the server for next task
-pkill -f "vllm serve"
-```
+- [ ] `pip install vllm` completes
+- [ ] vLLM imports without errors
 
 ---
 
-### ✅ Task 1.4: Serve a Real Model – Llama-3-8B
+### ✅ Task 1.7: Serve Your First LLM API
 **Tags**: `[Inference–Runtime]` `[Phase1-HF_vs_vLLM]`  
-**Time**: 30 min (includes download time)  
-**Win**: Production-grade 8B model serving on your GPU
+**Time**: 30 min  
+**Win**: OpenAI-compatible API serving Llama-2-7B
 
 #### 📖 Learn First
-- [Llama 3 Model Card](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct)
-- [vLLM Supported Models](https://docs.vllm.ai/en/latest/models/supported_models.html)
+- [vLLM OpenAI Server](https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html)
+- [Llama 2 on HuggingFace](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)
+
+**Note**: T4 has 16GB VRAM. Llama-2-7B in FP16 needs ~14GB. It will fit!
 
 #### 🔧 Lab Instructions
 
 ```bash
-# Login to HuggingFace (needed for Llama access)
+# Install HuggingFace CLI for model access
 pip install huggingface_hub
+
+# Login to HuggingFace (needed for Llama models)
 huggingface-cli login
-# Paste your HF token (get from https://huggingface.co/settings/tokens)
+# Get token from: https://huggingface.co/settings/tokens
+# Accept Llama 2 license at: https://huggingface.co/meta-llama/Llama-2-7b-chat-hf
 ```
 
 ```bash
-# Serve Llama-3-8B-Instruct
-# Note: First run downloads ~16GB, takes 5-10 min
-vllm serve meta-llama/Meta-Llama-3-8B-Instruct \
+# Create artifacts directory
+mkdir -p ~/artifacts
+
+# Start vLLM server with Llama-2-7B
+# Note: First run downloads ~13GB model
+vllm serve meta-llama/Llama-2-7b-chat-hf \
+  --host 0.0.0.0 \
   --port 8000 \
   --gpu-memory-utilization 0.90 \
-  2>&1 | tee ~/artifacts/vllm_llama3_startup.log &
-
-# Wait for model to load (watch the log)
-tail -f ~/artifacts/vllm_llama3_startup.log
-# Wait until you see "Uvicorn running on http://0.0.0.0:8000"
+  2>&1 | tee ~/artifacts/vllm_startup.log &
 ```
 
 ```bash
-# Test the model
+# Watch the log until you see "Uvicorn running"
+tail -f ~/artifacts/vllm_startup.log
+# Press Ctrl+C when server is ready
+```
+
+```bash
+# Check GPU memory usage
+nvidia-smi
+```
+
+Should show ~13-14GB used.
+
+```bash
+# Test the API!
+curl http://localhost:8000/v1/models
+
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "model": "meta-llama/Llama-2-7b-chat-hf",
     "messages": [
-      {"role": "user", "content": "Explain PagedAttention in one paragraph."}
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Explain what CUDA is in one sentence."}
     ],
-    "max_tokens": 200
+    "max_tokens": 100
   }' | python3 -m json.tool
 ```
 
 #### 🏆 Success Criteria
-- [ ] Model loads without OOM errors
-- [ ] Chat completion returns coherent response about PagedAttention
-- [ ] `nvidia-smi` shows ~15-16GB VRAM used
+- [ ] vLLM server starts without OOM
+- [ ] `/v1/models` endpoint works
+- [ ] Chat completion returns sensible response
+- [ ] GPU shows ~14GB used
 
+#### 📁 Artifacts
 ```bash
-# Capture GPU state
-nvidia-smi | tee ~/artifacts/nvidia_smi_llama3_loaded.txt
+nvidia-smi | tee ~/artifacts/nvidia_smi_serving.txt
+curl -s http://localhost:8000/v1/models | python3 -m json.tool | tee ~/artifacts/api_models.json
 ```
 
 ---
 
-### ✅ Task 1.5: First Benchmark – Measure Baseline Throughput
+### ✅ Task 1.8: First Benchmark
 **Tags**: `[Inference–Runtime]` `[Phase1-HF_vs_vLLM]`  
-**Time**: 20 min  
-**Win**: You have real numbers: tokens/sec, latency
-
-#### 📖 Learn First
-- [vLLM Benchmarking Guide](https://docs.vllm.ai/en/latest/performance/benchmarks.html)
-- Key metrics: **TTFT** (time to first token), **TPOT** (time per output token), **Throughput** (tokens/sec)
+**Time**: 15 min  
+**Win**: Baseline performance numbers on T4
 
 #### 🔧 Lab Instructions
 
-Create a benchmark script:
-
 ```bash
-cat > ~/benchmark_llama3.py << 'EOF'
+cat > ~/benchmark.py << 'EOF'
 import requests
 import time
 import json
 import statistics
 
-BASE_URL = "http://localhost:8000/v1/chat/completions"
-MODEL = "meta-llama/Meta-Llama-3-8B-Instruct"
+URL = "http://localhost:8000/v1/chat/completions"
+MODEL = "meta-llama/Llama-2-7b-chat-hf"
 
-def benchmark_single_request(prompt, max_tokens=100):
+def benchmark(prompt, max_tokens=100):
     start = time.time()
-    response = requests.post(BASE_URL, json={
+    r = requests.post(URL, json={
         "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": max_tokens,
+        "max_tokens": max_tokens
     })
     elapsed = time.time() - start
-    
-    data = response.json()
-    output_tokens = data["usage"]["completion_tokens"]
-    tokens_per_sec = output_tokens / elapsed
-    
-    return {
-        "elapsed_sec": elapsed,
-        "output_tokens": output_tokens,
-        "tokens_per_sec": tokens_per_sec
-    }
+    data = r.json()
+    tokens = data["usage"]["completion_tokens"]
+    return {"elapsed": elapsed, "tokens": tokens, "tok_per_sec": tokens/elapsed}
 
-# Run 10 requests
 prompts = [
-    "Write a haiku about GPU computing.",
-    "Explain transformers in simple terms.",
-    "What is the capital of France?",
-    "List 5 benefits of LLM inference optimization.",
-    "Write a short poem about CUDA cores.",
-    "Explain batch processing in one sentence.",
-    "What is KV cache?",
-    "Describe PagedAttention briefly.",
-    "Why is memory bandwidth important for LLMs?",
-    "What is speculative decoding?"
+    "What is machine learning?",
+    "Explain neural networks briefly.",
+    "What is GPU computing?",
+    "Describe CUDA in one paragraph.",
+    "What is inference optimization?"
 ]
 
+print("Running benchmark on T4...")
 results = []
-print("Running 10 single-request benchmarks...")
-for i, prompt in enumerate(prompts):
-    r = benchmark_single_request(prompt)
+for i, p in enumerate(prompts):
+    r = benchmark(p)
+    print(f"  {i+1}. {r['tok_per_sec']:.1f} tok/s ({r['elapsed']:.2f}s)")
     results.append(r)
-    print(f"  Request {i+1}: {r['tokens_per_sec']:.1f} tok/s, {r['elapsed_sec']:.2f}s")
 
-# Summary
-tok_per_sec = [r['tokens_per_sec'] for r in results]
-print(f"\n=== BASELINE RESULTS ===")
-print(f"Mean throughput: {statistics.mean(tok_per_sec):.1f} tokens/sec")
-print(f"Median throughput: {statistics.median(tok_per_sec):.1f} tokens/sec")
-print(f"Min/Max: {min(tok_per_sec):.1f} / {max(tok_per_sec):.1f} tokens/sec")
+avg = statistics.mean([r['tok_per_sec'] for r in results])
+print(f"\n=== T4 BASELINE: {avg:.1f} tokens/sec ===")
 
-# Save results
-with open("/root/artifacts/benchmark_baseline.json", "w") as f:
-    json.dump({"results": results, "summary": {
-        "mean_tok_per_sec": statistics.mean(tok_per_sec),
-        "median_tok_per_sec": statistics.median(tok_per_sec),
-    }}, f, indent=2)
-print("\nResults saved to ~/artifacts/benchmark_baseline.json")
+with open("/root/artifacts/t4_baseline.json", "w") as f:
+    json.dump({"results": results, "avg_tok_per_sec": avg}, f, indent=2)
 EOF
-```
 
-```bash
-python3 ~/benchmark_llama3.py
+python3 ~/benchmark.py
 ```
 
 #### 🏆 Success Criteria
-- [ ] All 10 requests complete successfully
-- [ ] You have baseline numbers (expect ~30-60 tok/s for single requests on RTX 4090)
+- [ ] Benchmark completes all 5 prompts
 - [ ] Results saved to JSON
+- [ ] You know your T4 baseline (expect ~20-40 tok/s)
 
 ---
 
-## Tier 1 Summary
+## Tier 1 Summary – What You Built
 
-| Task | Status | Key Metric |
-|------|--------|------------|
-| 1.1 RunPod Setup | ⬜ | SSH access confirmed |
-| 1.2 CUDA Verify | ⬜ | PyTorch sees GPU |
-| 1.3 vLLM + GPT-2 | ⬜ | Server responds |
-| 1.4 Llama-3-8B | ⬜ | Model loaded, ~16GB VRAM |
-| 1.5 Baseline Benchmark | ⬜ | XX tok/s measured |
+| Layer | What You Installed | Command to Verify |
+|-------|-------------------|-------------------|
+| **OS** | Ubuntu 22.04 | `cat /etc/os-release` |
+| **Kernel** | Linux headers | `uname -r` |
+| **Driver** | nvidia-driver-535 | `nvidia-smi` |
+| **CUDA** | cuda-toolkit-12.2 | `nvcc --version` |
+| **Python** | Python 3.10 + venv | `python3 --version` |
+| **ML** | PyTorch + CUDA | `python3 -c "import torch; print(torch.cuda.is_available())"` |
+| **Inference** | vLLM | `python3 -c "import vllm"` |
+| **API** | OpenAI-compatible | `curl localhost:8000/v1/models` |
 
-**Commit after Tier 1:**
+**You built the entire stack from scratch!** This is exactly what an inference engineer needs to understand.
+
+### Artifacts Created
+```
+~/artifacts/
+├── os_info.txt
+├── gpu_hardware.txt
+├── system_info.txt
+├── nvidia_smi_driver.txt
+├── gpu_info.csv
+├── cuda_version.txt
+├── pytorch_info.txt
+├── vllm_startup.log
+├── nvidia_smi_serving.txt
+├── api_models.json
+└── t4_baseline.json
+```
+
+### Commit
 ```bash
 cd ~/artifacts
 git init
 git add .
-git commit -m "day02-tier1: RunPod setup + Llama-3-8B baseline (~XX tok/s)"
+git commit -m "day02-tier1: T4 from scratch - Ubuntu → Drivers → CUDA → vLLM → API"
 ```
 
 ---
 
-**→ Continue to [Tier 2](LOG_tier02.md) for concurrent request benchmarking and HF vs vLLM comparison**
+**→ Continue to [Tier 2](LOG_tier02.md) for HF vs vLLM comparison**
 
