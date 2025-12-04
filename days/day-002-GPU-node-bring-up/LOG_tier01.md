@@ -166,17 +166,29 @@ nvidia-smi
 **Expected outcome**: `nvidia-smi` shows your GPU with driver version and CUDA version. This confirms RunPod's auto-provisioning worked.
 
 ```bash
+# Install pciutils (required for lspci)
+apt update && apt install -y pciutils
+
 # Check what GPU hardware is attached
 lspci | grep -i nvidia
 ```
 
 Expected output like:
 ```
-# For RTX 2000 Ada:
-00:05.0 VGA compatible controller: NVIDIA Corporation AD107GL [RTX 2000 Ada Generation]
-# Or for T4:
+# Single RTX 2000 Ada:
+01:00.0 VGA compatible controller: NVIDIA Corporation AD107GL [RTX 2000 Ada Generation] (rev a1)
+
+# Multi-GPU (8x RTX 2000 Ada example):
+01:00.0 VGA compatible controller: NVIDIA Corporation AD107GL [RTX 2000 Ada Generation] (rev a1)
+02:00.0 VGA compatible controller: NVIDIA Corporation AD107GL [RTX 2000 Ada Generation] (rev a1)
+81:00.0 VGA compatible controller: NVIDIA Corporation AD107GL [RTX 2000 Ada Generation] (rev a1)
+... (one line per GPU)
+
+# For T4:
 00:05.0 3D controller: NVIDIA Corporation TU104GL [Tesla T4] (rev a1)
 ```
+
+> **Note**: Each GPU also shows an associated Audio device (e.g., `01:00.1 Audio device`) – you can ignore these.
 
 #### 🏆 Success Criteria
 - [ ] SSH/terminal access to Ubuntu 24.04

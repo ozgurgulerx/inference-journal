@@ -47,55 +47,33 @@ And, if budget allows, you'll get one A100/H100 anchor to see how the same confi
 
 #### 🔧 Lab Instructions
 
-Create the config directory and YAML:
+Create the config directory and start vLLM directly (simpler than YAML config):
 
 ```bash
 mkdir -p ~/configs/vllm
 
-cat > ~/configs/vllm/qwen2p5_1p5b_chat_16gb.yaml << 'EOF'
-# vLLM config for chat-like workloads on a ~16GB GPU (RunPod RTX 2000 / T4 class)
-
-model: "Qwen/Qwen2.5-1.5B-Instruct"
-
-# Use bf16 to exploit tensor cores while keeping memory reasonable
-dtype: "bfloat16"
-
-# Networking
-host: "0.0.0.0"
-port: 8000
-
-# Memory & capacity knobs
-gpu_memory_utilization: 0.8   # leave some headroom to avoid OOM jitter
-max_model_len: 4096           # typical chat context window
-max_num_seqs: 128             # concurrent sequences vLLM may keep in memory
-max_num_batched_tokens: 2048  # prefill chunk size; good balance for small model
-
-# Runtime features
-tensor_parallel_size: 1
-enable_prefix_caching: true
-enable_chunked_prefill: true
-
-# Logging
-disable_log_requests: true
-log_level: "INFO"
-EOF
-```
-
-Create a wrapper script:
-
-```bash
+# Create a simple start script (CLI args are more reliable than YAML)
 cat > ~/configs/vllm/serve_qwen2p5_1p5b_chat_16gb.sh << 'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Disable HF transfer optimization to keep downloads predictable
 export HF_HUB_ENABLE_HF_TRANSFER=0
 
-vllm serve --config ~/configs/vllm/qwen2p5_1p5b_chat_16gb.yaml
+vllm serve Qwen/Qwen2.5-1.5B-Instruct \
+  --dtype bfloat16 \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --gpu-memory-utilization 0.8 \
+  --max-model-len 4096 \
+  --max-num-seqs 128 \
+  --enable-prefix-caching \
+  --enable-chunked-prefill
 EOF
 
 chmod +x ~/configs/vllm/serve_qwen2p5_1p5b_chat_16gb.sh
 ```
+
+> **Note**: CLI args are more reliable than YAML config files across vLLM versions.
 
 #### 📁 Artifacts
 - `~/configs/vllm/qwen2p5_1p5b_chat_16gb.yaml`
@@ -118,141 +96,112 @@ You now have a **named recipe** for "chat on small GPU", not a pile of CLI flags
 
 #### 🔧 Lab Instructions
 
+First, install the required dependency:
+
+```bash
+pip install aiohttp
+```
+
+Create the benchmark script:
+
 ```bash
 mkdir -p ~/scripts/benchmarks ~/benchmarks
 
 cat > ~/scripts/benchmarks/vllm_chat_bench.py << 'EOF'
 #!/usr/bin/env python3
-"""
-Async chat-style benchmark for vLLM with full metrics.
-
-Measures (per vLLM/Anyscale conventions):
-  - TTFT: Time to First Token
-  - ITL: Inter-Token Latency (streaming mode)
-  - TPOT: Time Per Output Token = (e2e - ttft) / output_tokens
-  - E2E: End-to-end latency
-  - System TPS: Total throughput (tokens/sec)
-  - User TPS: Per-user throughput ≈ 1/ITL
-
-Use this for 'chat-like' workloads:
-  - short prompt, short-ish answers
-  - moderate concurrency
-"""
+"""Simple async benchmark for vLLM. Measures TTFT, E2E latency, throughput."""
 
 import argparse
 import asyncio
 import json
 import statistics
 import time
-
 import aiohttp
 
+MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 
-async def run_request(session, url: str, prompt: str, max_new_tokens: int):
-    """Send a single completion request and measure TTFT + E2E latency."""
-    payload = {
-        "model": "Qwen/Qwen2.5-1.5B-Instruct",
-        "prompt": prompt,
-        "max_tokens": max_new_tokens,
-        "stream": False,
-    }
-
-    t_start = time.time()
+async def run_single_request(session, url, prompt, max_tokens):
+    """Send one request, return (ttft_ms, e2e_ms, output_tokens)."""
+    payload = {"model": MODEL, "prompt": prompt, "max_tokens": max_tokens, "stream": False}
+    
+    t0 = time.perf_counter()
     async with session.post(url, json=payload) as resp:
-        t_first = time.time()  # first byte back from server
+        t1 = time.perf_counter()  # first byte
         data = await resp.json()
-    t_end = time.time()
-
-    ttft_ms = (t_first - t_start) * 1000.0
-    e2e_ms = (t_end - t_start) * 1000.0
-
-    # crude token estimate (word-based)
-    text = data["choices"][0]["text"]
-    out_tokens = len(text.split())
-
+    t2 = time.perf_counter()
+    
+    # Handle both completion and chat response formats
+    if "choices" in data and len(data["choices"]) > 0:
+        text = data["choices"][0].get("text", "") or data["choices"][0].get("message", {}).get("content", "")
+    else:
+        text = ""
+    
+    ttft_ms = (t1 - t0) * 1000
+    e2e_ms = (t2 - t0) * 1000
+    out_tokens = len(text.split())  # rough estimate
+    
     return ttft_ms, e2e_ms, out_tokens
 
 
-async def run_bench(
-    url: str,
-    n_requests: int,
-    concurrency: int,
-    max_new_tokens: int,
-    prompt: str,
-):
-    """Run n_requests with given concurrency and return aggregate stats."""
-    ttfts, e2es, toks = [], [], []
-    semaphore = asyncio.Semaphore(concurrency)
-
-    async def worker(i: int):
-        async with semaphore:
+async def run_benchmark(url, prompt, n_requests, concurrency, max_tokens):
+    """Run n_requests with concurrency limit, return stats dict."""
+    results = []  # list of (ttft, e2e, tokens)
+    sem = asyncio.Semaphore(concurrency)
+    
+    async def worker():
+        async with sem:
             async with aiohttp.ClientSession() as session:
-                ttft_ms, e2e_ms, out_tokens = await run_request(
-                    session, url, prompt, max_new_tokens
-                )
-                ttfts.append(ttft_ms)
-                e2es.append(e2e_ms)
-                toks.append(out_tokens)
-
-    await asyncio.gather(*[worker(i) for i in range(n_requests)])
-
-    def p95(values):
-        if not values:
-            return 0.0
-        values_sorted = sorted(values)
-        idx = max(0, int(0.95 * len(values_sorted)) - 1)
-        return values_sorted[idx]
-
-    total_tokens = sum(toks)
-    total_time_s = sum(e2es) / 1000.0 if e2es else 0.0
-    throughput_tok_s = total_tokens / total_time_s if total_time_s > 0 else 0.0
-
-    # Calculate TPOT (Time Per Output Token)
-    tpots = []
-    for ttft, e2e, tok in zip(ttfts, e2es, toks):
-        if tok > 0:
-            tpot = (e2e - ttft) / tok
-            tpots.append(tpot)
-
+                result = await run_single_request(session, url, prompt, max_tokens)
+                results.append(result)
+    
+    t_start = time.perf_counter()
+    await asyncio.gather(*[worker() for _ in range(n_requests)])
+    t_end = time.perf_counter()
+    
+    wall_clock_s = t_end - t_start
+    ttfts = [r[0] for r in results]
+    e2es = [r[1] for r in results]
+    tokens = [r[2] for r in results]
+    
+    def percentile(vals, p):
+        if not vals: return 0.0
+        s = sorted(vals)
+        return s[min(int(len(s) * p), len(s) - 1)]
+    
+    total_tokens = sum(tokens)
+    
     return {
-        "p50_ttft_ms": statistics.median(ttfts) if ttfts else 0.0,
-        "p95_ttft_ms": p95(ttfts),
-        "p50_tpot_ms": statistics.median(tpots) if tpots else 0.0,
-        "p95_tpot_ms": p95(tpots),
-        "p50_e2e_ms": statistics.median(e2es) if e2es else 0.0,
-        "p95_e2e_ms": p95(e2es),
-        "system_throughput_tok_s": throughput_tok_s,
-        "user_tps_approx": 1000.0 / statistics.median(tpots) if tpots else 0.0,
         "n_requests": n_requests,
         "concurrency": concurrency,
-        "max_new_tokens": max_new_tokens,
+        "max_tokens": max_tokens,
+        "wall_clock_s": round(wall_clock_s, 2),
+        "p50_ttft_ms": round(statistics.median(ttfts), 2) if ttfts else 0,
+        "p95_ttft_ms": round(percentile(ttfts, 0.95), 2),
+        "p50_e2e_ms": round(statistics.median(e2es), 2) if e2es else 0,
+        "p95_e2e_ms": round(percentile(e2es, 0.95), 2),
+        "throughput_tok_s": round(total_tokens / wall_clock_s, 2) if wall_clock_s > 0 else 0,
+        "total_tokens": total_tokens,
     }
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="vLLM Chat Benchmark")
     parser.add_argument("--url", default="http://127.0.0.1:8000/v1/completions")
     parser.add_argument("--n-requests", type=int, default=32)
     parser.add_argument("--concurrency", type=int, default=8)
-    parser.add_argument("--max-new-tokens", type=int, default=128)
+    parser.add_argument("--max-tokens", type=int, default=128)
     args = parser.parse_args()
-
-    chat_prompt = (
-        "You are an LLM inference engineer. In 3–4 concise sentences, "
-        "explain the trade-offs between max_model_len, max_num_seqs, and "
-        "concurrency for serving Qwen2.5-1.5B on a 16GB GPU."
-    )
-
-    res = asyncio.run(
-        run_bench(
-            url=args.url,
-            n_requests=args.n_requests,
-            concurrency=args.concurrency,
-            max_new_tokens=args.max_new_tokens,
-            prompt=chat_prompt,
-        )
-    )
-    print(json.dumps(res, indent=2))
+    
+    prompt = "Explain the trade-offs between max_model_len and max_num_seqs for vLLM serving in 3 sentences."
+    
+    result = asyncio.run(run_benchmark(
+        url=args.url,
+        prompt=prompt,
+        n_requests=args.n_requests,
+        concurrency=args.concurrency,
+        max_tokens=args.max_tokens,
+    ))
+    print(json.dumps(result, indent=2))
 EOF
 
 chmod +x ~/scripts/benchmarks/vllm_chat_bench.py
@@ -314,41 +263,45 @@ cat ~/benchmarks/day003_chat_baseline_rtx16gb.json
 Create the grid sweep script:
 
 ```bash
-cat > ~/scripts/benchmarks/run_chat_capacity_grid.sh << 'EOF'
+cat > ~/scripts/benchmarks/run_chat_capacity_grid.sh << 'OUTER'
 #!/usr/bin/env bash
 set -euo pipefail
 
 URL="${URL:-http://127.0.0.1:8000/v1/completions}"
-OUT_CSV="${OUT_CSV:-$HOME/benchmarks/day003_chat_capacity_rtx16gb.csv}"
-GPU_NAME="${GPU_NAME:-RunPod-RTX-small}"
+OUT_CSV="${OUT_CSV:-$HOME/benchmarks/day003_chat_capacity.csv}"
+GPU_NAME="${GPU_NAME:-RTX-16GB}"
 
 mkdir -p ~/benchmarks
 
-echo "workload,gpu,concurrency,max_new_tokens,p50_ttft_ms,p95_ttft_ms,p50_e2e_ms,p95_e2e_ms,throughput_tok_s" > "$OUT_CSV"
+echo "gpu,concurrency,max_tokens,p50_ttft_ms,p95_ttft_ms,p50_e2e_ms,p95_e2e_ms,throughput_tok_s" > "$OUT_CSV"
 
 for conc in 1 4 8 16; do
-  for mnt in 64 256 512; do
-    echo "[*] chat capacity: conc=${conc}, max_new_tokens=${mnt}"
+  for maxtok in 64 128 256; do
+    echo "[*] Testing: concurrency=$conc, max_tokens=$maxtok"
     
+    # Run benchmark and save JSON
     python ~/scripts/benchmarks/vllm_chat_bench.py \
       --url "$URL" \
-      --n-requests 32 \
+      --n-requests 16 \
       --concurrency "$conc" \
-      --max-new-tokens "$mnt" \
-      > /tmp/chat_bench.json
-
-    # Parse and append to CSV
-    python3 << PY
+      --max-tokens "$maxtok" \
+      > /tmp/bench_result.json
+    
+    # Parse JSON and append CSV row
+    python3 -c "
 import json
-data = json.load(open("/tmp/chat_bench.json"))
-print(f"chat,${GPU_NAME},${conc},${mnt},{data['p50_ttft_ms']:.2f},{data['p95_ttft_ms']:.2f},{data['p50_e2e_ms']:.2f},{data['p95_e2e_ms']:.2f},{data['throughput_tok_s']:.2f}")
-PY
+with open('/tmp/bench_result.json') as f:
+    d = json.load(f)
+print(f\"$GPU_NAME,$conc,$maxtok,{d['p50_ttft_ms']},{d['p95_ttft_ms']},{d['p50_e2e_ms']},{d['p95_e2e_ms']},{d['throughput_tok_s']}\")
+" >> "$OUT_CSV"
+    
   done
-done >> "$OUT_CSV"
+done
 
 echo ""
-echo "[✓] Results written to: ${OUT_CSV}"
-EOF
+echo "[✓] Results: $OUT_CSV"
+cat "$OUT_CSV"
+OUTER
 
 chmod +x ~/scripts/benchmarks/run_chat_capacity_grid.sh
 ```
