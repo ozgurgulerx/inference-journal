@@ -312,6 +312,94 @@ cat >> ~/artifacts/day003_chat_capacity_notes.md << 'EOF'
 EOF
 ```
 
+---
+
+#### 📊 Findings: Batch Summarization on RTX 2000 Ada 16GB
+
+Using the same vLLM config as Tier 1, but with longer prompts and a summarization instruction, we swept concurrency × max_new_tokens for an offline batch workload.
+
+##### Raw Data
+
+```csv
+workload,gpu,concurrency,max_new_tokens,total_time_s,throughput_tok_s,p50_latency_ms,p95_latency_ms
+batch,RunPod-RTX2000-16GB,8,256,12.09,243.03,3653.98,4569.61
+batch,RunPod-RTX2000-16GB,8,512,12.63,276.87,3947.04,5888.02
+batch,RunPod-RTX2000-16GB,16,256,7.2,430.22,4757.83,5184.75
+batch,RunPod-RTX2000-16GB,16,512,9.43,355.52,4036.16,9423.26
+batch,RunPod-RTX2000-16GB,32,256,5.3,567.9,4657.35,5300.39
+batch,RunPod-RTX2000-16GB,32,512,6.54,443.28,4318.5,5970.2
+```
+
+##### Best Batch Configurations
+
+| Concurrency | max_new_tokens | Throughput (tok/s) | p95 Latency (ms) | Comment |
+|-------------|----------------|--------------------|------------------|---------|
+| 32 | 256 | ~568 | ~5300 | Best 256-token setting |
+| 32 | 512 | ~443 | ~6000 | Best 512-token setting |
+
+##### Key Patterns Observed
+
+**1. Throughput scales cleanly with concurrency (for 256 tokens)**
+
+| Concurrency | Throughput | p95 Latency | Scaling |
+|-------------|------------|-------------|---------|
+| 8 | 243 tok/s | 4570ms | baseline |
+| 16 | 430 tok/s | 5185ms | 1.8× |
+| 32 | 568 tok/s | 5300ms | 2.3× |
+
+Going from 8 → 32 concurrent docs gives **2.3× throughput** with p95 rising only from ~4.6s to ~5.3s.
+
+**2. Jitter ridge at concurrency=16 for 512-token outputs**
+
+| Concurrency | max_tokens=512 | p95 Latency |
+|-------------|----------------|-------------|
+| 8 | 277 tok/s | 5888ms |
+| 16 | 356 tok/s | **9423ms** ⚠️ |
+| 32 | 443 tok/s | 5970ms |
+
+Concurrency=16 with 512 tokens is a "bad ridge" — p95 jumps to ~9.4s while both 8 and 32 stay under 6s. Likely an interaction between sequence length, batching, and scheduler behavior.
+
+**3. Longer outputs reduce throughput but batch can absorb it**
+
+At concurrency=32:
+- 256 tokens → 568 tok/s, p95 ~5.3s
+- 512 tokens → 443 tok/s, p95 ~6.0s
+
+Doubling output length drops throughput ~22% but latency only increases ~13%. Acceptable for offline jobs.
+
+##### Chat vs Batch Comparison (RTX 2000 Ada 16GB)
+
+*Chat numbers from Tier 1 (`day003_chat_capacity_rtx16gb.csv`), batch numbers from this task.*
+
+| Workload | Best Config | Throughput (tok/s) | p95 Latency | Notes |
+|----------|-------------|--------------------|-------------|-------|
+| **Chat** | conc=16, max_tokens=128 | ~620 | ~2600ms | Interactive SLO |
+| **Batch** | conc=32, max_tokens=256 | ~568 | ~5300ms | Offline, relaxed |
+
+**Key insight**: Chat at 16×128 achieves ~620 tok/s with p95 ~2.6s, while batch at 32×256 reaches ~568 tok/s with p95 ~5.3s. Batch trades latency headroom for the ability to push longer outputs and higher concurrency.
+
+##### Operating Recommendations
+
+**For 256-token summaries:**
+```yaml
+concurrency: 32
+max_new_tokens: 256
+expected_throughput: ~568 tok/s
+expected_p95: ~5.3s
+```
+
+**For 512-token summaries:**
+```yaml
+concurrency: 32  # NOT 16 — jitter ridge
+max_new_tokens: 512
+expected_throughput: ~443 tok/s
+expected_p95: ~6.0s
+```
+
+**Avoid:** `concurrency=16, max_tokens=512` — p95 spikes to ~9.4s.
+
+---
+
 #### 📁 Artifacts
 - `~/data/day003_docs_sample.txt`
 - `~/scripts/benchmarks/vllm_batch_summarize_bench.py`
@@ -339,174 +427,88 @@ Knowing both profiles lets you **right-size endpoints**: one pool for chat, one 
 
 ---
 
-### ✅ Task 2.2: A100/H100 Anchor Run (If Budget Allows)
+### ✅ Task 2.2 (Optional): GPU Scaling Anchor – RTX vs A100/H100
 **Tags**: `[Inference–Runtime]` `[Phase1-ScalingAcrossGPUs]`  
-**Time**: 45–60 min (plus provisioning)  
-**Win**: See how the same config/scripts behave on "real" inference GPUs
+**Time**: 30–45 min (if you already have access)  
+**Win**: Build intuition for when to recommend bigger GPUs
 
-#### 🔗 Tier 1 Reference
+> ⚠️ **This is optional.** Only do this if you already have A100/H100 credits or cheap access. The core learning from Day 003 is on the RTX 2000; this step is just for extra intuition about bigger GPUs.
 
-We reuse **exactly the same scripts** from Tier 1 (`run_chat_capacity_grid.sh`, `vllm_chat_bench.py`) and Tier 2 (`run_batch_capacity_grid.sh`). The only change is the GPU — this isolates hardware scaling from software changes.
+#### 🔧 If You Have A100/H100 Access
 
-#### 🔧 Lab Instructions
-
-**Step 1: Provision A100/H100 on RunPod**
-
-Spin up a RunPod instance with:
-- **A100 40GB** or **H100 80GB** (even 1 hour is enough)
-- Same OS (Ubuntu 22/24)
-- Same Python + vLLM setup (reuse Day 002 bootstrap)
-
-**Step 2: Reuse your exact configs/scripts**
+Reuse the **exact same scripts** from Tier 1 and Tier 2.1 — only the GPU changes:
 
 ```bash
-# SSH into A100 instance, then:
-
-# Copy your configs (or git clone your repo)
-mkdir -p ~/configs/vllm ~/scripts/benchmarks ~/benchmarks ~/data
-
-# [Transfer files or recreate from Day 003 instructions]
-
-# Start vLLM with same config (40GB has plenty of headroom)
-export HF_HUB_ENABLE_HF_TRANSFER=0
-vllm serve --config ~/configs/vllm/qwen2p5_1p5b_chat_16gb.yaml &
-
-# Wait for server to be ready
-sleep 30
-```
-
-**Step 3: Run chat capacity grid on A100**
-
-```bash
+# Chat capacity grid
 GPU_NAME="RunPod-A100-40GB" \
 OUT_CSV="$HOME/benchmarks/day003_chat_capacity_a100_40gb.csv" \
 ~/scripts/benchmarks/run_chat_capacity_grid.sh
-```
 
-**Step 4: Run batch capacity grid on A100**
-
-```bash
+# Batch capacity grid
 GPU_NAME="RunPod-A100-40GB" \
 OUT_CSV="$HOME/benchmarks/day003_batch_capacity_a100_40gb.csv" \
 ~/scripts/benchmarks/run_batch_capacity_grid.sh
 ```
 
-**Step 5: Optional – push concurrency higher**
+Optionally push concurrency higher (A100/H100 can handle 64–128 concurrent).
 
-A100/H100 can handle much more:
+#### 📝 Paper Exercise Alternative
 
-```bash
-# Test higher concurrency levels
-for conc in 32 64 128; do
-  echo "[*] Testing concurrency=${conc}"
-  python ~/scripts/benchmarks/vllm_chat_bench.py \
-    --n-requests 64 --concurrency "$conc" --max-new-tokens 128
-done
-```
+**Don't want to pay for A100/H100 time?** Use public benchmarks to fill the comparison table:
 
-**Step 6: Compare results**
+- vLLM benchmarks show A100 40GB typically achieves **2–4× throughput** vs RTX-class for similar models
+- NVIDIA's published numbers for Qwen-class models on A100 show ~1500–2500 tok/s at high concurrency
+- Use these to estimate your speedup factor and cost-per-token
 
-```bash
-# Download CSVs to your local machine or compare in terminal
-echo "=== RTX 16GB Chat Capacity ==="
-cat ~/benchmarks/day003_chat_capacity_rtx16gb.csv
+This still teaches the **decision logic** (when to recommend RTX vs A100/H100) without spending money.
 
-echo ""
-echo "=== A100 40GB Chat Capacity ==="
-cat ~/benchmarks/day003_chat_capacity_a100_40gb.csv
-```
+#### 📊 Comparison Framework
 
-**Step 7: Document GPU scaling observations**
+Fill this table with measured or estimated data:
 
-```bash
-cat > ~/artifacts/day003_gpu_scaling_notes.md << 'EOF'
-# Day 003 – GPU Scaling Notes (RTX vs A100)
+| Workload | Metric | RTX 2000 16GB | A100 40GB (est.) | Speedup |
+|----------|--------|---------------|------------------|---------|
+| **Chat** | Peak throughput | ~620 tok/s | ~1500–2000 tok/s | ~2.5–3× |
+| **Chat** | Max stable conc | 16 | 64–128 | ~4–8× |
+| **Batch** | Peak throughput | ~568 tok/s | ~1200–1800 tok/s | ~2–3× |
+| **Batch** | p95 @ peak conc | ~5300ms | ~2000–3000ms | ~2× better |
 
-## Hardware Compared
-
-| GPU | VRAM | Tensor Cores | Approx. Cost/hr |
-|-----|------|--------------|-----------------|
-| RTX 2000 Ada | 16GB | Ada Gen | ~$0.20/hr |
-| A100 40GB | 40GB | Ampere | ~$1.50/hr |
-
-## Chat Workload Comparison
-
-| Metric | RTX 16GB | A100 40GB | Speedup |
-|--------|----------|-----------|---------|
-| Max stable concurrency | [FILL] | [FILL] | [FILL]x |
-| Peak throughput (tok/s) | [FILL] | [FILL] | [FILL]x |
-| p95 @ peak concurrency | [FILL] ms | [FILL] ms | - |
-
-## Batch Workload Comparison
-
-| Metric | RTX 16GB | A100 40GB | Speedup |
-|--------|----------|-----------|---------|
-| Max stable concurrency | [FILL] | [FILL] | [FILL]x |
-| Peak throughput (tok/s) | [FILL] | [FILL] | [FILL]x |
-| p95 @ peak concurrency | [FILL] ms | [FILL] ms | - |
-
-## Key Insights
-
-1. A100 can push concurrency to [X] before p95 degrades
-2. Throughput scales roughly [X]x with the larger GPU
-3. Cost-per-token comparison: [YOUR ANALYSIS]
-
-## When to Recommend A100/H100
-
-- Client needs > [X] concurrent users
-- Throughput requirements > [X] tok/s
-- Latency SLA < [X] ms at high concurrency
-
-## When RTX-class is Sufficient
-
-- Development/testing
-- Low-traffic chat applications
-- Cost-sensitive batch jobs with relaxed latency
-
-EOF
-```
-
-#### 📁 Artifacts
-- `~/benchmarks/day003_chat_capacity_a100_40gb.csv`
-- `~/benchmarks/day003_batch_capacity_a100_40gb.csv`
-- `~/artifacts/day003_gpu_scaling_notes.md`
-
-#### 💡 Why This Matters
-
-This is **extremely high value**: you start to get a feel for when to recommend which GPU.
+#### 💡 Decision Logic
 
 | Scenario | Recommendation |
 |----------|----------------|
 | Dev/test, low traffic, cost-sensitive | RTX-class (16–24GB) |
-| Production chat with strict SLOs | A100 40GB |
+| Production chat, strict latency SLOs | A100 40GB |
 | High-throughput batch or long-context | A100 80GB / H100 |
-| Maximum performance, budget allows | H100 80GB |
 
-Having **measured data** on both lets you make these recommendations with confidence, not vibes.
+**Key insight**: A100 isn't just "faster" — it lets you push **much higher concurrency** while keeping latency acceptable. That's the real scaling win.
+
+#### 📁 Artifacts (if run)
+- `~/benchmarks/day003_chat_capacity_a100_40gb.csv` *(optional)*
+- `~/benchmarks/day003_batch_capacity_a100_40gb.csv` *(optional)*
+- `~/artifacts/day003_gpu_scaling_notes.md` *(optional)*
 
 #### 🏆 Success Criteria
-- [ ] Same scripts run on A100/H100
-- [ ] Comparison data collected
-- [ ] Clear understanding of scaling behavior
+- [ ] Understand when RTX-class is sufficient vs when A100/H100 is needed
+- [ ] (Optional) Run same scripts on A100/H100 and compare
 
 ---
 
 ## Tier 2 Summary
 
-| Task | What You Did | Builds On |
+| Task | What You Did | Required? |
 |------|--------------|-----------|
-| **2.1** | Batch summarization workload | Tier 1 server + harness |
-| **2.2** | A100/H100 anchor comparison | Tier 1 + 2.1 scripts |
+| **2.1** | Batch summarization workload on RTX | ✅ Core |
+| **2.2** | GPU scaling anchor (RTX vs A100/H100) | ⚪ Optional |
 
 ### Key Comparisons Enabled
 
-| Comparison | Tier 1 Data | Tier 2 Data |
-|------------|-------------|-------------|
-| Chat vs Batch (RTX) | `day003_chat_capacity_rtx16gb.csv` | `day003_batch_capacity_rtx16gb.csv` |
-| RTX vs A100 (Chat) | `day003_chat_capacity_rtx16gb.csv` | `day003_chat_capacity_a100_40gb.csv` |
-| RTX vs A100 (Batch) | — | `day003_batch_capacity_a100_40gb.csv` |
+| Comparison | Data Source |
+|------------|-------------|
+| Chat vs Batch (RTX) | `day003_chat_capacity_rtx16gb.csv` + `day003_batch_capacity_rtx16gb.csv` |
+| RTX vs A100 | Measured (if run) or estimated from public benchmarks |
 
-### Additional Artifacts
+### Artifacts
 ```
 ~/data/
 └── day003_docs_sample.txt
@@ -519,11 +521,11 @@ Having **measured data** on both lets you make these recommendations with confid
 ├── day003_batch_capacity_rtx16gb.csv
 ├── day003_batch_c16_rtx16gb.json
 ├── day003_batch_c32_rtx16gb.json
-├── day003_chat_capacity_a100_40gb.csv (if done)
-└── day003_batch_capacity_a100_40gb.csv (if done)
+├── day003_chat_capacity_a100_40gb.csv   (optional, if run)
+└── day003_batch_capacity_a100_40gb.csv  (optional, if run)
 
 ~/artifacts/
-└── day003_gpu_scaling_notes.md
+└── day003_gpu_scaling_notes.md          (optional)
 ```
 
 ---
