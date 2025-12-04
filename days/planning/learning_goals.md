@@ -4,7 +4,7 @@
 > **End Date**: March 10, 2026  
 > **Duration**: 100 days  
 > **Effort**: 3-4 hrs/day focused (20-25 hrs/week)  
-> **Goal**: Production-ready LLM inference skills
+> **Goal**: Production-ready LLM serving & fine-tuning skills across *modern* architectures (transformers, long-context, MoE, state-space/hybrid), with the ability to design, tune, and justify real-world inference + SFT/RL stacks for clients.
 
 ---
 
@@ -37,13 +37,46 @@
 
 By March 10, 2026, you will have:
 
-- [ ] A production-ready GPU node with tuned OS settings
-- [ ] Fluency with vLLM serving, configuration, and debugging
-- [ ] Hands-on experience with INT8/INT4 quantization (AWQ, GPTQ)
-- [ ] 3+ benchmark repos with real numbers
-- [ ] 2 case studies: before/after optimization results
-- [ ] 1 published blog post or talk
-- [ ] A repeatable optimization playbook
+- [ ] A production-ready GPU node with tuned OS settings  
+- [ ] Fluency with **vLLM** serving, configuration, and debugging, plus hands-on exposure to at least one alternate runtime (TensorRT-LLM / Triton / TGI / vendor endpoints)  
+- [ ] Practical experience running **multiple modern model families**:
+  - at least one “standard” transformer LLM,
+  - at least one **long-context** / windowed-attention model,
+  - and at least one **hybrid/state-space or MoE-style** model,
+  and understanding how their attention/KV patterns change latency, memory, and capacity  
+- [ ] Hands-on experience with INT8/INT4 quantization (AWQ, GPTQ) and how it affects speed, VRAM, and output quality  
+- [ ] A clear mental model and practical tuning experience for **KV cache knobs** (max_model_len, max_num_seqs, block size, gpu_memory_utilization) and how they interact with attention modes and context length  
+- [ ] **1 end-to-end SFT/LoRA pipeline** for a real use case (code + evaluation + serving behind a runtime)  
+- [ ] **1 small RL-style alignment experiment** (e.g. DPO/ORPO or PPO via TRL) run end-to-end, with before/after evaluation  
+- [ ] 3+ benchmark or training repos with real numbers (latency, throughput, tokens/sec, cost) for different models/runtimes/configs  
+- [ ] 2 case studies that address **current inference challenges** (e.g. chat vs batch, long context, tool-using or multi-hop flows, or multi-tenant setups) with before/after optimization results  
+- [ ] 1 published blog post or talk that explains a modern inference challenge (e.g. KV cache & long context, quantization trade-offs, serving aligned models) and how you solved it  
+- [ ] A repeatable **Inference & Fine-Tuning Optimization Playbook** that covers:
+  - runtime choice (vLLM / TRT-LLM / Triton / vendor),
+  - hardware & cost sizing,
+  - KV/attention/quantization tuning,
+  - and SFT/RL options for typical consulting scenarios
+
+### Technical Focus (What “Inference Engineering” Means Here)
+
+Over these 100 days, “inference engineering” will explicitly cover:
+
+- **Modern attention & memory patterns**  
+  - sliding-window / long-context attention, grouped/multi-query attention, FlashAttention, speculative decoding  
+  - KV cache behavior and tuning (capacity, fragmentation, throughput vs latency trade-offs)
+
+- **Model diversity, not just one LLM**  
+  - running and comparing x/y/z model families (Llama, Mistral, Qwen, long-context variants, and at least one state-space/hybrid/MoE-style model)  
+  - understanding how architecture choices change throughput, latency, and hardware fit
+
+- **End-to-end inference problems from 2025–2026 reality**  
+  - chat vs batch workloads, multi-hop / tool-using pipelines  
+  - long-context requests, SFT’d and RL-aligned models in serving  
+  - multi-tenant / multi-workload sharing of the same GPU
+
+- **Training side needed for consulting**  
+  - practical SFT/LoRA pipelines that can be deployed behind vLLM/TRT-LLM  
+  - small but real RL-style alignment experiments (DPO/ORPO/PPO) and how they affect serving capacity and cost
 
 ---
 
