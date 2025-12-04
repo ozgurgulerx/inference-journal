@@ -7,10 +7,6 @@
 > **Time**: ~2 hours
 
 ---
-## Thoughts
-Serving qwen2.5 on vLLM was fun. \
-Great that I moved past the psycological barrier of procrastination of not initiating this learning which I think where the most of the tech complexity will be. 
-I'm trying to maximise the impact of this learning effort by having chatgpt5.1's guidance to focus and organise it to target more pragmatic / high impact technical learning which any book cannot meet. (It will itself be outdated quiet soon I would assume as the pace of tech increases).
 
 ## 🎯 Core Idea
 
@@ -289,7 +285,7 @@ cat > ~/scripts/benchmarks/run_chat_capacity_grid.sh << 'OUTER'
 set -euo pipefail
 
 URL="${URL:-http://127.0.0.1:8000/v1/completions}"
-OUT_CSV="${OUT_CSV:-$HOME/benchmarks/day003_chat_capacity.csv}"
+OUT_CSV="${OUT_CSV:-$HOME/benchmarks/day003_chat_capacity_rtx16gb.csv}"
 GPU_NAME="${GPU_NAME:-RTX-16GB}"
 
 mkdir -p ~/benchmarks
@@ -349,15 +345,15 @@ cat > ~/artifacts/day003_chat_capacity_notes.md << 'EOF'
 
 ## Best Combinations (high throughput, reasonable p95)
 
-| Concurrency | max_new_tokens | p95 E2E (ms) | Throughput (tok/s) | Notes |
-|-------------|----------------|--------------|--------------------| ------|
+| Concurrency | max_tokens | p95 E2E (ms) | Throughput (tok/s) | Notes |
+|-------------|------------|--------------|--------------------| ------|
 | [FILL] | [FILL] | [FILL] | [FILL] | Sweet spot |
 | [FILL] | [FILL] | [FILL] | [FILL] | Still acceptable |
 
 ## Jitter / Unstable Zone
 
-| Concurrency | max_new_tokens | Issue |
-|-------------|----------------|-------|
+| Concurrency | max_tokens | Issue |
+|-------------|------------|-------|
 | [FILL] | [FILL] | p95 spiked to X ms |
 
 ## Key Observations
@@ -508,7 +504,7 @@ optimize_for: tokens_per_dollar
 You now have **measured chat capacity** for a given GPU – not vibes. This already puts you closer to the top 1% than most practitioners.
 
 #### 🏆 Success Criteria
-- [ ] Grid sweep completed for all concurrency × max_new_tokens combos
+- [ ] Grid sweep completed for all concurrency × max_tokens combos
 - [ ] CSV saved with all results
 - [ ] Notes file documents best combos and jitter zones
 

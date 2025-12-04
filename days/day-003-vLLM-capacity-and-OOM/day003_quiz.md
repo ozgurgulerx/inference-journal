@@ -112,8 +112,55 @@
 |-------|-------|
 | 25–30 correct | Expert – ready for production consulting |
 | 18–24 correct | Proficient – solid foundation |
-| 12–17 correct | Developing – review Tier 1–3 materials |
+| 12–17 correct | Developing – review Tier 1–2 materials |
 | < 12 correct | Needs work – redo experiments with focus |
+
+---
+
+## Answer Key (Based on Day 003 Findings)
+
+*Reference data from RTX 2000 Ada 16GB experiments*
+
+### Key Numbers to Know
+
+| Metric | Chat (max_tokens=128) | Batch (max_tokens=256) |
+|--------|----------------------|------------------------|
+| Single-stream baseline | ~50 tok/s | ~50 tok/s |
+| Best concurrency | 16 | 32 |
+| Peak throughput | ~620 tok/s | ~568 tok/s |
+| p95 latency at peak | ~2600ms | ~5300ms |
+| Scaling efficiency @ conc=8 | 90% | 2.3× from conc=8 |
+
+### Quick Answers
+
+**Q6 (Concurrency scaling):**
+- conc=1: ~50 tok/s, p95 ~2000ms
+- conc=4: ~186 tok/s (3.7×), p95 ~2200ms (+6%)
+- conc=8: ~359 tok/s (7.2×), p95 ~2300ms (+11%)
+- conc=16: ~620 tok/s (12.4×), p95 ~2600ms (+24%)
+
+**Q13 (Batch vs Chat):**
+- Chat: p95 < 3s SLO, optimize for TTFT and latency
+- Batch: p95 < 6s acceptable, optimize for throughput (tok/s)
+
+**Q14 (Config differences):**
+| Parameter | Chat | Batch |
+|-----------|------|-------|
+| Concurrency | 8–16 | 16–32 |
+| max_tokens | 128 | 256–512 |
+| SLO target | p95 < 3s | p95 < 6s |
+
+**Q20 (Doubling max_tokens):**
+- TTFT: stays ~flat (prefill unchanged)
+- E2E: roughly doubles (more decode steps)
+- Throughput: may increase slightly (more tokens amortize overhead)
+
+### Critical Findings
+
+1. **TTFT ≈ E2E** in our tests → streaming not enabled, users wait for full response
+2. **Jitter ridge**: conc=16 + max_tokens=512 → p95 spikes to ~9400ms (avoid this config)
+3. **Sweet spot**: conc=8–16 for chat, conc=32 for batch
+4. **No queuing hell** until conc=16+ on this GPU — continuous batching works well
 
 ---
 

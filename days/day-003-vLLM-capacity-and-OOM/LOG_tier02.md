@@ -530,4 +530,4 @@ Fill this table with measured or estimated data:
 
 ---
 
-**→ Continue to [Tier 3](LOG_tier03.md)**: Capacity frontier analysis + "Life of a request" documentation
+**→ Continue to [Tier 3](LOG_tier03.md)**: Playbook consolidation, commit, and quiz

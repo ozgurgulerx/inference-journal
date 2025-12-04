@@ -79,27 +79,15 @@ Different inference workloads optimize for different metrics: real-time chat app
 
 ---
 
-### Tier 3: Deep Work (~4h)
-> Unified capacity analysis, connect numbers to vLLM internals.
-
-| Task | Deliverable |
-|------|-------------|
-| **3.1** | Capacity frontier report (sweet spots per GPU/workload) |
-| **3.2** | "Life of a Request" documentation—scheduler, KV cache, prefill/decode |
-
-**Outcome**: Client-presentable analysis + mental model for debugging OOM and latency spikes.
-
----
-
-### Tier 4: Consolidation (~45-60m)
+### Tier 3: Consolidation (~45-60m)
 > Package everything into reusable playbooks.
 
 | Task | Deliverable |
 |------|-------------|
-| **4.1** | vLLM Single-GPU Serving Recipes playbook |
-| **4.2** | vLLM Best Practices reference (chunked prefill, prefix caching, OOM debugging) |
-| **4.3** | Clean git commit |
-| **4.4** | Retrieval practice quiz |
+| **3.1** | vLLM Single-GPU Serving Recipes playbook |
+| **3.2** | vLLM Best Practices reference (chunked prefill, prefix caching, OOM debugging) |
+| **3.3** | Clean git commit |
+| **3.4** | Retrieval practice quiz |
 
 ---
 
@@ -109,7 +97,6 @@ Different inference workloads optimize for different metrics: real-time chat app
 configs/vllm/               → Reusable server configs
 scripts/benchmarks/         → Chat + batch benchmark harnesses, capacity grid scripts
 benchmarks/                 → Raw JSON/CSV results
-reports/                    → Capacity frontier, life-of-request docs
 playbooks/                  → Client-ready serving recipes
 ```
 
@@ -146,7 +133,6 @@ By completing Day 003:
 - [ ] Capacity grids showing safe operating zones
 - [ ] GPU scaling intuition (RTX → A100)
 - [ ] Playbook ready to share with clients or teammates
-- [ ] Mental model of vLLM request lifecycle
 
 ---
 
@@ -154,12 +140,11 @@ By completing Day 003:
 
 | Tier | Time | Scope |
 |------|------|-------|
-| Tier 1 | ~2h | Core—minimum viable |
-| Tier 2 | ~2h | Extension—batch + GPU comparison |
-| Tier 3 | ~4h | Deep—analysis + documentation |
-| Tier 4 | ~1h | Consolidation—playbooks + commit |
+| Tier 1 | ~2h | Core—chat capacity grid |
+| Tier 2 | ~1-2h | Extension—batch workload + optional GPU comparison |
+| Tier 3 | ~1h | Consolidation—playbooks + commit |
 
-**Total**: 7-9h for full completion. Tier 1 + 2.1 gets you 80% of the value.
+**Total**: 4-5h for full completion. Tier 1 + 2.1 gets you 80% of the value.
 
 ---
 
