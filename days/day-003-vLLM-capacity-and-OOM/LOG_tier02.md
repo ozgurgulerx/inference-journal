@@ -8,6 +8,17 @@
 
 ---
 
+## Progression from Tier 1
+
+In Tier 1, you built a **vLLM server config**, an **async benchmark harness** (`vllm_chat_bench.py`), and mapped a **chat capacity grid** on the RTX 2000 16GB. Here we reuse those same tools and extend them in two directions:
+
+1. **New workload**: Throughput-heavy batch document summarization (offline, latency-relaxed)
+2. **New hardware** (optional): A100/H100 anchor run for scaling comparison
+
+Same tools, new workload + new GPU.
+
+---
+
 ## Tier 2 Tasks
 
 ---
@@ -17,7 +28,15 @@
 **Time**: 45–60 min  
 **Win**: Second workload – lots of medium-long docs → maximize tokens/sec
 
-#### 🔧 Lab Instructions
+#### � Tier 1 Reference
+
+We'll compare batch metrics against the **chat capacity grid** from Tier 1:
+- Chat baseline: `~/benchmarks/day003_chat_capacity_rtx16gb.csv`
+- Chat observations: see [Tier 1 Task 1.3 Findings](LOG_tier01.md#-findings-runpod-rtx-2000-ada-16gb)
+
+This lets us directly contrast **interactive chat** (low-latency, moderate throughput) vs **offline batch** (latency-relaxed, max throughput).
+
+#### � Lab Instructions
 
 **Step 1: Prepare sample documents**
 
@@ -193,9 +212,9 @@ chmod +x ~/scripts/benchmarks/vllm_batch_summarize_bench.py
 **Step 3: Run batch benchmark**
 
 ```bash
-# With vLLM still serving from Tier 1
+# vLLM should still be serving from Tier 1 (same server, same config)
 
-# Test at different concurrency levels
+# Test at different concurrency levels (higher than chat since latency is relaxed)
 python ~/scripts/benchmarks/vllm_batch_summarize_bench.py \
   --docs-file ~/data/day003_docs_sample.txt \
   --concurrency 16 --max-new-tokens 256 --repeat 4 \
@@ -274,7 +293,9 @@ cat >> ~/artifacts/day003_chat_capacity_notes.md << 'EOF'
 |-------------|----------------|--------------------| -----------------|
 | [FILL] | [FILL] | [FILL] | [FILL] |
 
-### Chat vs Batch Comparison
+### Chat vs Batch Comparison (RTX 2000 16GB)
+
+*Chat numbers from Tier 1 (`day003_chat_capacity_rtx16gb.csv`), batch numbers from Tier 2 (`day003_batch_capacity_rtx16gb.csv`)*
 
 | Workload | Best Concurrency | Best Throughput | Acceptable p95 |
 |----------|------------------|-----------------|----------------|
@@ -283,9 +304,10 @@ cat >> ~/artifacts/day003_chat_capacity_notes.md << 'EOF'
 
 ### Key Differences
 
-1. Batch can tolerate higher p95 latency (no interactive user)
-2. Batch achieves higher throughput with aggressive concurrency
-3. [YOUR OBSERVATION]
+1. Batch can tolerate higher p95 latency (no interactive user waiting)
+2. Batch achieves higher throughput by pushing concurrency harder
+3. Batch uses longer outputs (256+ tokens) where chat was optimized for 128
+4. [YOUR OBSERVATION]
 
 EOF
 ```
@@ -298,6 +320,18 @@ EOF
 - `~/benchmarks/day003_batch_c16_rtx16gb.json`
 - `~/benchmarks/day003_batch_c32_rtx16gb.json`
 
+#### 💡 Why This Matters
+
+| Aspect | Chat (Tier 1) | Batch (Tier 2) |
+|--------|---------------|----------------|
+| **Priority** | Low latency (TTFT, p95 E2E) | High throughput (tok/s) |
+| **User** | Human waiting at screen | Background job, no one watching |
+| **Concurrency** | Capped to protect latency | Push as high as GPU allows |
+| **Output length** | Short (~128 tokens) | Longer (~256+ tokens) |
+| **SLO** | p95 E2E < 3s | p95 E2E < 30s is fine |
+
+Knowing both profiles lets you **right-size endpoints**: one pool for chat, one for batch, different configs.
+
 #### 🏆 Success Criteria
 - [ ] Batch benchmark script working
 - [ ] Batch capacity grid completed
@@ -309,6 +343,10 @@ EOF
 **Tags**: `[Inference–Runtime]` `[Phase1-ScalingAcrossGPUs]`  
 **Time**: 45–60 min (plus provisioning)  
 **Win**: See how the same config/scripts behave on "real" inference GPUs
+
+#### 🔗 Tier 1 Reference
+
+We reuse **exactly the same scripts** from Tier 1 (`run_chat_capacity_grid.sh`, `vllm_chat_bench.py`) and Tier 2 (`run_batch_capacity_grid.sh`). The only change is the GPU — this isolates hardware scaling from software changes.
 
 #### 🔧 Lab Instructions
 
@@ -434,7 +472,17 @@ EOF
 - `~/artifacts/day003_gpu_scaling_notes.md`
 
 #### 💡 Why This Matters
-This is **extremely high value**: you start to get a feel for when to tell a client "you need A100/H100" vs "this is overkill".
+
+This is **extremely high value**: you start to get a feel for when to recommend which GPU.
+
+| Scenario | Recommendation |
+|----------|----------------|
+| Dev/test, low traffic, cost-sensitive | RTX-class (16–24GB) |
+| Production chat with strict SLOs | A100 40GB |
+| High-throughput batch or long-context | A100 80GB / H100 |
+| Maximum performance, budget allows | H100 80GB |
+
+Having **measured data** on both lets you make these recommendations with confidence, not vibes.
 
 #### 🏆 Success Criteria
 - [ ] Same scripts run on A100/H100
@@ -445,10 +493,18 @@ This is **extremely high value**: you start to get a feel for when to tell a cli
 
 ## Tier 2 Summary
 
-| Task | What You Did | Status |
-|------|--------------|--------|
-| **2.1** | Batch summarization workload | ⬜ |
-| **2.2** | A100/H100 anchor comparison | ⬜ |
+| Task | What You Did | Builds On |
+|------|--------------|-----------|
+| **2.1** | Batch summarization workload | Tier 1 server + harness |
+| **2.2** | A100/H100 anchor comparison | Tier 1 + 2.1 scripts |
+
+### Key Comparisons Enabled
+
+| Comparison | Tier 1 Data | Tier 2 Data |
+|------------|-------------|-------------|
+| Chat vs Batch (RTX) | `day003_chat_capacity_rtx16gb.csv` | `day003_batch_capacity_rtx16gb.csv` |
+| RTX vs A100 (Chat) | `day003_chat_capacity_rtx16gb.csv` | `day003_chat_capacity_a100_40gb.csv` |
+| RTX vs A100 (Batch) | — | `day003_batch_capacity_a100_40gb.csv` |
 
 ### Additional Artifacts
 ```
