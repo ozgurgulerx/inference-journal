@@ -14,6 +14,11 @@ I'm trying to maximise the impact of this learning effort by having chatgpt5.1's
 
 ## 🎯 Core Idea
 
+This exercise is teaching you to think like an inference engineer:to read a single benchmark JSON like an inference engineer: to instantly parse latency (TTFT, E2E), throughput (tpot), and concurrency, and see how they interact.
+
+You want to reach the point where you glance at it and think:
+
+“p95 latency ≈ 2.3 s, concurrency = 8, ~100 tokens/request, ~350 tokens/s overall → this is the box’s capacity and the user experience.”
 Turn your RunPod node(s) into **measured**, not "hopeful", vLLM servers for two real workloads:
 
 1. **Latency-optimized chat API** – short turns, interactive user
@@ -217,7 +222,7 @@ Terminal 1 – Start vLLM:
 Terminal 2 – Run benchmark:
 ```bash
 python ~/scripts/benchmarks/vllm_chat_bench.py \
-  --n-requests 32 --concurrency 8 --max-new-tokens 128 \
+  --n-requests 32 --concurrency 8 --max-tokens 128 \
   > ~/benchmarks/day003_chat_baseline_rtx16gb.json
 
 cat ~/benchmarks/day003_chat_baseline_rtx16gb.json
@@ -250,6 +255,12 @@ cat ~/benchmarks/day003_chat_baseline_rtx16gb.json
 - User TPS = what one user experiences (degrades under load)
 
 </details>
+
+**Conclusion**:
+This exercise is training you to look at a benchmark JSON and instantly form a mental picture of the system. For example, if you see `p95_ttft_ms ≈ p95_e2e_ms ≈ 2300` with 8 concurrent requests, you conclude there is effectively no streaming: users wait about 2.3 seconds and then get the full answer at once. If you see `total_tokens = 3210`, `wall_clock_s = 9.15`, and `concurrency = 8`, you compute `throughput_tok_s ≈ 350` and infer that one RTX 2000 Ada can comfortably handle 8 concurrent chatty users at ~100 tokens per request within a ~3 second p95 SLO. If you later crank concurrency to 32 and see throughput barely increase while p95 latency jumps to 9–10 seconds, you immediately know you’ve entered queuing hell and need to cap concurrency. Conversely, if you see tiny p95 latencies (say 100 ms) and very low throughput on a big GPU, you know the GPU is underutilized and could either host more workloads or be downgraded. And if you increase `max_tokens` from 128 to 512 and E2E doubles while TTFT stays flat, you recognize that you’ve shifted the bottleneck into pure generation compute and may want to lower max tokens to buy back capacity. All of this is about turning TTFT, E2E, tpot, and concurrency into quick, almost reflexive judgments about user experience, capacity, and the next knob to turn.
+
+
+
 
 ---
 
