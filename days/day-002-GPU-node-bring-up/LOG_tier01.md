@@ -557,7 +557,7 @@ Matmul time: ~15-25ms (~40-70 TFLOPS)
 ---
 
 **GPU Health Check Summary:**
-
+...
 | Step | Check | What It Verifies | Status |
 |------|-------|------------------|--------|
 | 1 | nvidia-smi | Driver works | ⬜ |
