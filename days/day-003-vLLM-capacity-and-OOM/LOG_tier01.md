@@ -257,7 +257,9 @@ cat ~/benchmarks/day003_chat_baseline_rtx16gb.json
 </details>
 
 **Conclusion**:
-This exercise is training you to look at a benchmark JSON and instantly form a mental picture of the system. For example, if you see `p95_ttft_ms ≈ p95_e2e_ms ≈ 2300` with 8 concurrent requests, you conclude there is effectively no streaming: users wait about 2.3 seconds and then get the full answer at once. If you see `total_tokens = 3210`, `wall_clock_s = 9.15`, and `concurrency = 8`, you compute `throughput_tok_s ≈ 350` and infer that one RTX 2000 Ada can comfortably handle 8 concurrent chatty users at ~100 tokens per request within a ~3 second p95 SLO. If you later crank concurrency to 32 and see throughput barely increase while p95 latency jumps to 9–10 seconds, you immediately know you’ve entered queuing hell and need to cap concurrency. Conversely, if you see tiny p95 latencies (say 100 ms) and very low throughput on a big GPU, you know the GPU is underutilized and could either host more workloads or be downgraded. And if you increase `max_tokens` from 128 to 512 and E2E doubles while TTFT stays flat, you recognize that you’ve shifted the bottleneck into pure generation compute and may want to lower max tokens to buy back capacity. All of this is about turning TTFT, E2E, tpot, and concurrency into quick, almost reflexive judgments about user experience, capacity, and the next knob to turn.
+This exercise is training you to look at a benchmark JSON and instantly form a mental picture of the system. For example, if you see `p95_ttft_ms ≈ p95_e2e_ms ≈ 2300` with 8 concurrent requests, you conclude there is effectively no streaming: users wait about 2.3 seconds and then get the full answer at once. If you see `total_tokens = 3210`, `wall_clock_s = 9.15`, and `concurrency = 8`, you compute `throughput_tok_s ≈ 350` and infer that one RTX 2000 Ada can comfortably handle 8 concurrent chatty users at ~100 tokens per request within a ~3 second p95 SLO. If you later crank concurrency to 32 and see throughput barely increase while p95 latency jumps to 9–10 seconds, you immediately know you’ve entered queuing hell and need to cap concurrency. Conversely, if you see tiny p95 latencies (say 100 ms) and very low throughput on a big GPU, you know the GPU is underutilized and could either host more workloads or be downgraded. And if you increase `max_tokens` from 128 to 512 and E2E doubles while TTFT stays flat, you recognize that you’ve shifted the bottleneck into pure generation compute and may want to lower max tokens to buy back capacity. All of this is about turning TTFT, E2E, tpot, and concurrency into quick, almost reflexive judgments about user experience, capacity, and the next knob to turn. 
+
+As you get comfortable with that, the next step is to layer in richer latency and throughput metrics so you’re not just saying “it’s slow,” but why it’s slow. You start watching p95/p99 TTFT and E2E separately for interactive paths (chat, UI buttons) versus background jobs (long summaries), and you break E2E into queue time, pure model compute time, and network overhead so you can tell whether you need more GPUs, better batching, or just saner concurrency limits. On the GPU side you track prefill and decode speed in tokens/sec, plus effective batch sizes, to see if you’re actually using the hardware efficiently or just burning money with batch=1 everywhere. In a typical enterprise setup this translates to: tight TTFT and p95 E2E SLOs for chat (fast streaming, capped concurrency), and more relaxed but throughput- and cost-oriented SLOs for offline jobs (heavy batching, longer sequences). The point is that an inference engineer doesn’t just read “2.3 s, 350 tok/s” — they immediately map those numbers to UX guarantees, capacity per GPU, likely bottlenecks (queue vs compute), and concrete actions like “enable streaming,” “lower max_tokens,” “cap concurrency at 16,” or “consolidate models onto fewer cards.”
 
 
 
@@ -268,6 +270,14 @@ This exercise is training you to look at a benchmark JSON and instantly form a m
 **Tags**: `[Inference–Runtime]` `[Phase1-LoadTesting]`  
 **Time**: 45 min  
 **Win**: Find a safe-ish zone for chat on your current RunPod GPU
+
+#### 🎯 What This Practice Is Called
+
+This is **Capacity Planning via Throughput-Latency Characterization** — a core inference engineering skill.
+
+In Task 1.2 you built a tool that produces **one data point**. Here you systematically sweep the parameter space (concurrency × output length) to **map the entire capacity envelope** of your GPU. The goal is to answer: *"Given a p95 latency budget of X ms, what's the maximum concurrency I can sustain?"*
+
+This produces a **throughput-latency frontier** — the curve showing where your system saturates and where latency becomes unacceptable. Every production inference deployment needs this data to set safe operating points, and it's what separates "I deployed a model" from "I understand my system's capacity."
 
 #### 🔧 Lab Instructions
 
@@ -365,6 +375,134 @@ echo "Edit ~/artifacts/day003_chat_capacity_notes.md with your findings"
 - `~/scripts/benchmarks/run_chat_capacity_grid.sh`
 - `~/benchmarks/day003_chat_capacity_rtx16gb.csv`
 - `~/artifacts/day003_chat_capacity_notes.md`
+
+---
+
+#### 📊 Findings: RunPod RTX 2000 Ada 16GB
+
+**Big picture**: This RTX 2000 16GB delivers ~50 tok/s single-stream and up to ~620 tok/s at concurrency 16 with ~2.6s p95 for 128-token replies. That's a perfectly decent "small GPU chat box".
+
+##### Raw Data
+
+```csv
+gpu,concurrency,max_tokens,p50_ttft_ms,p95_ttft_ms,p50_e2e_ms,p95_e2e_ms,throughput_tok_s
+RunPod-RTX2000-16GB,1,64,  1033.65,1064.54,1033.7, 1064.63, 48.1
+RunPod-RTX2000-16GB,1,128, 2060.37,2071.18,2060.42,2071.26, 49.98
+RunPod-RTX2000-16GB,1,256, 4004.2, 4123.1, 4004.25,4123.17, 49.16
+RunPod-RTX2000-16GB,4,64,  1099.25,1105.87,1099.28,1105.9,  172.94
+RunPod-RTX2000-16GB,4,128, 2174.82,2189.45,2174.87,2189.48, 186.25
+RunPod-RTX2000-16GB,4,256, 4222.99,4367.22,4223.05,4367.26, 185.26
+RunPod-RTX2000-16GB,8,64,  1147.17,1169.38,1147.21,1169.39, 343.22
+RunPod-RTX2000-16GB,8,128, 2276.85,2298.28,2276.92,2298.3,  359.27
+RunPod-RTX2000-16GB,8,256, 3334.16,4553.77,3334.22,4553.79, 283.75
+RunPod-RTX2000-16GB,16,64, 1315.41,1316.46,1315.43,1316.48, 579.74
+RunPod-RTX2000-16GB,16,128,2564.09,2566.57,2564.13,2566.61, 620.4
+RunPod-RTX2000-16GB,16,256,4959.24,4972.16,4959.28,4972.19, 544.15
+```
+
+##### Visualization
+
+![GPU Profiling Results](../assets/day003_gpu_profiling.png)
+
+*Left: Throughput scales near-linearly up to concurrency=8, then diminishing returns. Right: p95 latency stays remarkably stable for 64/128 tokens, but 256 tokens shows higher baseline latency.*
+
+##### Key Patterns Observed
+
+**1. TTFT ≈ E2E everywhere**
+
+For every row, `p50_ttft_ms ≈ p50_e2e_ms`. This means:
+- Streaming is not enabled (or only flushed at the end)
+- UX: users see nothing for ~1–5s, then the full answer at once
+- **Biggest UX win**: enable true streaming to get TTFT down to a few hundred ms
+
+**2. Single-stream baseline: ~50 tok/s**
+
+At concurrency=1, decode rate is constant regardless of output length:
+
+| max_tokens | E2E (ms) | Throughput |
+|------------|----------|------------|
+| 64 | ~1030 | 48 tok/s |
+| 128 | ~2060 | 50 tok/s |
+| 256 | ~4000 | 49 tok/s |
+
+Latency doubles when you double `max_tokens` — pure decode-bound behavior.
+
+**3. Concurrency scaling efficiency**
+
+At `max_tokens=128`:
+
+| Concurrency | Throughput | Scaling | Efficiency |
+|-------------|------------|---------|------------|
+| 1 | 50 tok/s | 1× | — |
+| 4 | 186 tok/s | 3.7× | 93% |
+| 8 | 359 tok/s | 7.2× | 90% |
+| 16 | 620 tok/s | 12.4× | 78% |
+
+Continuous batching is working well. 4–8 concurrent is very healthy; 16 starts hitting limits but still delivers.
+
+**4. Latency vs concurrency trade-off is mild**
+
+At `max_tokens=128`:
+
+| Concurrency | p95 E2E | Delta |
+|-------------|---------|-------|
+| 1 | 2.07s | — |
+| 4 | 2.19s | +6% |
+| 8 | 2.30s | +11% |
+| 16 | 2.57s | +24% |
+
+No queuing hell — even at 16 concurrent, latency only increases ~25%.
+
+**5. Longer sequences hurt throughput at high concurrency**
+
+At `concurrency=8`:
+- 64 tokens → 343 tok/s
+- 128 tokens → 359 tok/s ✓ (sweet spot)
+- 256 tokens → 284 tok/s (drops)
+
+Sweet spot is around `max_tokens=128`; 256 pushes into a regime with less throughput and higher latency.
+
+##### Inference Engineer Evaluation
+
+If you define a chat SLO like:
+- p95 TTFT ≤ 1.0–1.5s (with real streaming)
+- p95 E2E ≤ 3.0s
+- typical reply length ≤ 128 tokens
+
+Then:
+
+| Use Case | Config | p95 E2E | Throughput |
+|----------|--------|---------|------------|
+| **Interactive chat** | conc=8–12, max_tokens=128 | ~2.3–2.6s | 360–620 tok/s |
+| **Heavy tasks** (summaries) | conc=8–16, max_tokens=256 | ~4.3–5.0s | 280–544 tok/s |
+
+##### Concrete Config Recommendations
+
+**Default chat endpoint:**
+```yaml
+max_tokens: 128
+target_concurrency_per_gpu: 8-12  # 16 is fine, 8 is very safe
+streaming: true  # so TTFT < 1s
+slo_p95_e2e: 3s
+```
+
+**Heavy-task endpoint (summaries, longer outputs):**
+```yaml
+max_tokens: 256+
+concurrency: 8-16
+slo_p95_e2e: 5s  # relaxed
+optimize_for: tokens_per_dollar
+```
+
+**Scaling trigger:**
+- When p95 E2E for chat consistently > 3s at target concurrency → scale out
+- Use ~600 tok/s @ conc=16 as "capacity per GPU" for planning
+
+##### Capacity Statement
+
+> *"This RTX 2000 Ada 16GB can comfortably serve 8–16 concurrent chat users generating ~128 tokens each, with p95 latency under 2.6 seconds and system throughput of ~620 tok/s."*
+
+---
 
 #### 💡 Why This Matters
 You now have **measured chat capacity** for a given GPU – not vibes. This already puts you closer to the top 1% than most practitioners.
