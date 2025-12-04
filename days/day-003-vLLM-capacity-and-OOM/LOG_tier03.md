@@ -8,6 +8,15 @@
 
 ---
 
+## Progression from Tier 2
+
+Tier 3 aggregates what you built in Tier 1 (chat capacity grid) and Tier 2 (batch capacity grid). No new serving setup is required. You will:
+
+- Generate a unified report from the CSVs you already produced.
+- Optionally include A100/H100 results if you ran Tier 2.2 (or use paper estimates).
+
+---
+
 ## Tier 3 Tasks
 
 ---
@@ -18,6 +27,13 @@
 **Win**: Unified view – "for each GPU & workload, what's the sweet spot?"
 
 #### 🔧 Lab Instructions
+
+#### 🔗 Inputs (from earlier tiers)
+
+- `~/benchmarks/day003_chat_capacity_rtx16gb.csv`
+- `~/benchmarks/day003_batch_capacity_rtx16gb.csv`
+- `~/benchmarks/day003_chat_capacity_a100_40gb.csv` (optional)
+- `~/benchmarks/day003_batch_capacity_a100_40gb.csv` (optional)
 
 **Step 1: Create the analysis script**
 
@@ -57,8 +73,8 @@ def load_csv(filepath: str) -> list[dict]:
 
 def find_sweet_spots(
     rows: list[dict],
-    p95_threshold_chat: float = 2000.0,
-    p95_threshold_batch: float = 5000.0,
+    p95_threshold_chat: float = 3000.0,
+    p95_threshold_batch: float = 6000.0,
 ) -> list[dict]:
     """
     Find optimal configurations where:
@@ -68,7 +84,8 @@ def find_sweet_spots(
     sweet_spots = []
     
     for row in rows:
-        workload = row.get('workload', 'unknown')
+        # Infer workload if missing (chat CSVs use p95_e2e_ms/max_tokens; batch uses p95_latency_ms/max_new_tokens)
+        workload = row.get('workload') or ('chat' if ('p95_e2e_ms' in row or 'max_tokens' in row) else 'batch')
         
         # Get p95 field (different CSVs may have different column names)
         p95 = row.get('p95_e2e_ms') or row.get('p95_latency_ms') or 0
@@ -129,7 +146,7 @@ def generate_report(all_data: dict[str, list[dict]], output_path: str):
             
             lines.append(
                 f"| {int(spot.get('concurrency', 0))} "
-                f"| {int(spot.get('max_new_tokens', 0))} "
+                f"| {int((spot.get('max_new_tokens') or spot.get('max_tokens', 0)))} "
                 f"| {spot.get('throughput_tok_s', 0):.1f} "
                 f"| {spot.get('p95', 0):.0f} "
                 f"| {spot.get('headroom_pct', 0):.0f}% |"
@@ -198,6 +215,8 @@ python ~/scripts/benchmarks/analyze_capacity.py \
 cat ~/reports/day003_capacity_frontier.md
 ```
 
+> Note: The script consumes whatever CSVs exist. If you did not run A100/H100 (Tier 2.2), the report will include only RTX results. You can still add estimated A100 rows later as a paper exercise.
+
 **Step 3: (Optional) Add visualization**
 
 ```bash
@@ -239,10 +258,10 @@ def plot_throughput_vs_concurrency(csv_path: str, output_path: str):
     
     rows = load_csv(csv_path)
     
-    # Group by max_new_tokens
+    # Group by output length (supports both chat and batch CSVs)
     by_mnt = {}
     for row in rows:
-        mnt = int(row.get('max_new_tokens', 0))
+        mnt = int((row.get('max_new_tokens') or row.get('max_tokens', 0)))
         if mnt not in by_mnt:
             by_mnt[mnt] = {'conc': [], 'throughput': [], 'p95': []}
         by_mnt[mnt]['conc'].append(row.get('concurrency', 0))
@@ -327,7 +346,7 @@ cat > ~/reports/day003_life_of_request_vllm_single_gpu.md << 'EOF'
 - **Context**: max_model_len=4096
 - **Concurrency tested**: 1, 4, 8, 16
 - **Output length**: 64–512 tokens
-- **Priority**: Low latency (p95 < 2s)
+- **Priority**: Low latency (p95 < 3s)
 
 ### Batch Summarization Workload
 - **Model**: Same
