@@ -1,15 +1,3 @@
-Absolutely, Ozgur — here is **the cleanest, inference-engineer level explanation** of **AWQ vs GPTQ**, written so you can drop it directly into your Day-004 journal.
-
-I’ll cover:
-
-* What each method *actually does under the hood*
-* Why they exist
-* How they differ
-* What vLLM cares about
-* Which one is better for your RTX2000 Ada + Qwen2.5-1.5B workload
-
----
-
 # 🔥 **AWQ vs GPTQ — Deep, Practical Explanation**
 
 Quantization in LLM inference = **reduce weight precision (usually from FP16/BF16 → INT4)** without hurting quality too much, so you:
