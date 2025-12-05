@@ -153,4 +153,26 @@ Works flawlessly with:
 --quantization awq
 ```
 
+---
+
+## Advanced Quantization Topics – Concrete Examples
+
+- **Quant capacity**  
+  - Example: reuse your Day 3 chat grid to run BF16 vs AWQ at `conc=1,8,16` with fixed `max_tokens=128`, write results to `~/benchmarks/day004_quant_capacity_rtx16gb.csv`, and add a short note on how many extra concurrent users INT4 buys you at the same p95.
+
+- **Quant compute graphs**  
+  - Example: capture a short Nsight Systems trace for a 200-token generation in BF16 vs AWQ, then annotate one screenshot per run highlighting which kernels become memory-bound vs compute-bound after quantization.
+
+- **Quant quality failure modes**  
+  - Example: build a 15–20 prompt set mixing factual QA, code, and step-by-step reasoning; run BF16 and AWQ, and log obvious issues (loops, contradictions, dropped constraints) into `~/artifacts/day004_quant_quality_failures.md` with one row per failure.
+
+- **Quant cost models**  
+  - Example: using your measured tokens/sec and an hourly GPU price for RTX 2000, compute `$ / 1M tokens` for BF16 vs AWQ in both chat and batch modes, and summarize the deltas in a small table in `~/artifacts/day004_quant_cost_model.md`.
+
+- **Quant-under-concurrency**  
+  - Example: hold `max_tokens` fixed and sweep concurrency until p95 latency crosses your SLO for BF16 and AWQ; record the “max safe concurrency” for each and turn that into a simple rule of thumb in your notes (e.g., “on RTX 2000, AWQ safely carries ~1.5–2× BF16 users at p95 ≤ 3s”).
+
+- **The real reasons enterprises choose INT4**  
+  - Example: draft a short bullet list for `~/reports/day004_int4_business_case.md` covering concrete drivers like GPU SKU consolidation, higher tenant density, meeting fixed latency SLOs on smaller GPUs, and enabling cheaper A/B capacity experiments—grounded in your Day 004 measurements instead of generic claims.
+
 
