@@ -208,6 +208,42 @@ vllm serve model --quantization fp8
 4. **Benchmark on your tasks** - Quality impact varies by use case
 5. **Consider GGUF** - Good for llama.cpp compatibility
 
+### AWQ vs GPTQ (Engineer Snapshot)
+
+Both **AWQ** and **GPTQ** are 4-bit, weight-only post‑training quantization methods; activations stay in higher precision.
+
+- **AWQ (Activation-Aware Weight Quantization)**  
+  - Uses a small calibration set to measure activation sensitivity and apply per-channel scaling.  
+  - Prioritizes “important” channels/heads and pushes error into less critical ones.  
+  - Tends to give **more stable quality**, especially on reasoning and long-context workloads.
+
+- **GPTQ (Gradient Post-Training Quantization)**  
+  - Solves a local reconstruction problem per block to minimize output error (Hessian/second‑order flavored).  
+  - Often yields **slightly higher throughput at batch=1**, with similar or smaller model size than AWQ.  
+  - More sensitive to config (group size, act‑order, dampening) and can show artifacts on some models.
+
+| Dimension              | AWQ                                | GPTQ                                 |
+|------------------------|------------------------------------|--------------------------------------|
+| Method                 | Activation-aware scaling           | Error-minimizing block reconstruction|
+| Quality stability      | High                               | Medium                               |
+| Long-context behavior  | Robust                             | Sometimes fragile                    |
+| Throughput (batch=1)   | Slightly lower                     | Slightly higher                      |
+| Throughput (batch>1)   | Strong, good for concurrency       | Good, but less predictable           |
+| Failure modes          | Mild degradation                   | Loops, collapse, odd repetitions     |
+| vLLM compatibility     | Very good, simple to integrate     | Good, config-dependent               |
+
+**Practical rule of thumb (16GB RTX-class, vLLM):**
+
+- Default to **AWQ** when you care about **chat quality, long contexts, and concurrent users** (e.g., Qwen2.5‑1.5B on RTX 2000 Ada).  
+- Reach for **GPTQ** when you need **maximum single-stream speed** and can tolerate more quality variance or are doing offline tools.
+
+Example (AWQ on Qwen2.5‑1.5B in vLLM):
+
+```bash
+vllm serve bartowski/Qwen2.5-1.5B-Instruct-AWQ \
+  --quantization awq
+```
+
 ---
 
 ## 5.3 Compiler Toolchains and Kernel Optimization

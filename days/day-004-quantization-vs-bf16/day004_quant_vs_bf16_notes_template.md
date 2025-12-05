@@ -28,6 +28,23 @@
 
 ---
 
+## AWQ vs GPTQ – Cheat Sheet
+
+- Both are **4-bit, weight-only, post-training** methods (activations stay FP16/BF16).
+- **AWQ** (activation-aware): uses calibration activations + per-channel scaling; more **stable quality**, especially for long context and reasoning; great for **concurrent chat** on 16GB RTX-class GPUs.
+- **GPTQ** (error-minimizing): blockwise reconstruction with Hessian-style weighting; can be **slightly faster at batch=1**, but more sensitive to config and more prone to artifacts (loops, collapse).
+
+| Dimension         | AWQ (recommended)            | GPTQ                          |
+|-------------------|-----------------------------|-------------------------------|
+| Stability         | High                        | Medium                        |
+| Long context      | Robust                      | Sometimes fragile             |
+| Batch=1 speed     | Slightly lower              | Slightly higher               |
+| Batch>1 / conc    | Strong, predictable         | Good, less predictable        |
+
+For this lab: default to **AWQ** (e.g. `bartowski/Qwen2.5-1.5B-Instruct-AWQ` with `--quantization awq`) unless you explicitly want to compare against a GPTQ variant.
+
+---
+
 ## Chat Capacity: BF16 vs Quant (Task 1.2)
 
 ### Results Summary
