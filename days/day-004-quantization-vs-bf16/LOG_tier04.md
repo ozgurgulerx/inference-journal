@@ -157,22 +157,70 @@ Works flawlessly with:
 
 ## Advanced Quantization Topics – Concrete Examples
 
-- **Quant capacity**  
-  - Example: reuse your Day 3 chat grid to run BF16 vs AWQ at `conc=1,8,16` with fixed `max_tokens=128`, write results to `~/benchmarks/day004_quant_capacity_rtx16gb.csv`, and add a short note on how many extra concurrent users INT4 buys you at the same p95.
+### Quant capacity
 
-- **Quant compute graphs**  
-  - Example: capture a short Nsight Systems trace for a 200-token generation in BF16 vs AWQ, then annotate one screenshot per run highlighting which kernels become memory-bound vs compute-bound after quantization.
+**Goal**: Turn “INT4 saves VRAM” into **hard numbers about extra capacity** on RTX 2000.
 
-- **Quant quality failure modes**  
-  - Example: build a 15–20 prompt set mixing factual QA, code, and step-by-step reasoning; run BF16 and AWQ, and log obvious issues (loops, contradictions, dropped constraints) into `~/artifacts/day004_quant_quality_failures.md` with one row per failure.
+- Run a reduced chat grid (e.g. `conc=1,8,16`, `max_tokens=128`) for BF16 and AWQ.  
+- Store a merged CSV: `~/benchmarks/day004_quant_capacity_rtx16gb.csv` with columns like `precision, conc, tok_s, p95_ms`.  
+- Derive:
+  - “Max safe concurrency” for BF16 vs AWQ at your target p95.  
+  - A one-liner, e.g. *“On RTX 2000, AWQ sustains ~1.7× more users at p95 ≤ 3s.”*  
+- Add a short capacity summary to `day004_quant_vs_bf16_notes.md` under “Quant Capacity on RTX2000”.
 
-- **Quant cost models**  
-  - Example: using your measured tokens/sec and an hourly GPU price for RTX 2000, compute `$ / 1M tokens` for BF16 vs AWQ in both chat and batch modes, and summarize the deltas in a small table in `~/artifacts/day004_quant_cost_model.md`.
+### Quant compute graphs
 
-- **Quant-under-concurrency**  
-  - Example: hold `max_tokens` fixed and sweep concurrency until p95 latency crosses your SLO for BF16 and AWQ; record the “max safe concurrency” for each and turn that into a simple rule of thumb in your notes (e.g., “on RTX 2000, AWQ safely carries ~1.5–2× BF16 users at p95 ≤ 3s”).
+**Goal**: See **where** quantization is buying you speed (or not) in the kernel timeline.
 
-- **The real reasons enterprises choose INT4**  
-  - Example: draft a short bullet list for `~/reports/day004_int4_business_case.md` covering concrete drivers like GPU SKU consolidation, higher tenant density, meeting fixed latency SLOs on smaller GPUs, and enabling cheaper A/B capacity experiments—grounded in your Day 004 measurements instead of generic claims.
+- Capture a short Nsight Systems trace for a single 200-token generation in BF16 vs AWQ.  
+- For each run, screenshot the kernel timeline and annotate:
+  - Which kernels shrink / disappear under quant (e.g. GEMMs, dequant ops).  
+  - Whether the decode loop still looks memory-bound (lots of small kernels with gaps).  
+- Save annotated images under `~/artifacts/day004_quant_compute_graphs/`.  
+- In your notes, write 3–5 bullets answering: *“Did INT4 move me closer to a FLOP ceiling or just reduce bandwidth pressure?”*
 
+### Quant quality failure modes
+
+**Goal**: Build a **small catalog of real failure modes** instead of vague “quality may drop”.
+
+- Construct a 15–20 prompt set mixing: factual QA, “explain like I’m 5”, multi-step reasoning, code, and summarization.  
+- Run BF16 and AWQ and log obvious issues into `~/artifacts/day004_quant_quality_failures.md` with a table:
+  - `prompt_id`, `category`, `bf16_ok?`, `quant_issue?`, `symptom`, `notes`.  
+- Look for patterns:
+  - Does AWQ fail more on math? On code? On multi-hop reasoning?  
+- Add a “Quant Failure Modes” subsection to your Day 4 notes with 3 concrete examples you’d actually show a client.
+
+### Quant cost models
+
+**Goal**: Turn throughput numbers into **$/1M tokens** that product teams understand.
+
+- Pick 1–2 representative configs (e.g. chat conc=16, batch conc=32).  
+- Using your measured tokens/sec and an hourly RTX 2000 price, compute:
+  - `cost_per_1M_tokens_bf16` and `cost_per_1M_tokens_awq`.  
+- Write a short `~/artifacts/day004_quant_cost_model.md` with:
+  - A tiny table summarizing the numbers.  
+  - 2 bullets on what this implies for *daily* or *monthly* spend at your expected traffic.  
+- Pull a one-sentence takeaway into the case study: *“INT4 AWQ cuts serving cost/1M tokens by ~X% at equal p95 latency.”*
+
+### Quant-under-concurrency
+
+**Goal**: Understand **how quant changes your latency curve**, not just peak throughput.
+
+- Fix `max_tokens` and sweep concurrency upward for BF16 and AWQ until p95 crosses your chat SLO (e.g. 3s).  
+- Plot or at least tabulate `conc` vs `p95` for both precisions; store raw data in `~/benchmarks/day004_quant_concurrency_sweep.csv`.  
+- Extract:
+  - “Knee points” where p95 starts to blow up.  
+  - A rule of thumb, e.g. *“On RTX 2000, AWQ keeps p95 < 3s up to conc≈24; BF16 only to conc≈14.”*  
+- Add these knee points to your “Quantization Risk Brief” as concrete operating guidance.
+
+### The real reasons enterprises choose INT4
+
+**Goal**: Distill **business, ops, and platform** reasons—not just “it’s faster”.
+
+- Based on your experiments, draft `~/reports/day004_int4_business_case.md` with 5–8 bullets such as:
+  - Higher tenant density per GPU (more workspaces / orgs per card).  
+  - Meeting latency SLOs on cheaper SKUs (RTX/A-series instead of A100/H100).  
+  - Making A/B experiments cheaper by reducing the GPU footprint for each variant.  
+  - Keeping a single “INT4-optimized” platform config instead of bespoke BF16 setups per model.  
+- Close with 2 bullets on **when INT4 is a bad idea** (e.g. safety-critical QA, strict factual accuracy), tied back to the failure modes you observed.
 
