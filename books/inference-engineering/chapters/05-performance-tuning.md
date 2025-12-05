@@ -244,6 +244,33 @@ vllm serve bartowski/Qwen2.5-1.5B-Instruct-AWQ \
   --quantization awq
 ```
 
+#### Bit-Widths & Typical Use Cases
+
+AWQ and GPTQ are general **weight-only PTQ algorithms**; they are not restricted to INT4, but the ecosystem has converged on 4‑bit for LLM inference.
+
+| Algorithm | Common bits | Typical use case |
+|----------|-------------|------------------|
+| AWQ      | 4‑bit (INT4) | Production chat / reasoning on small GPUs (e.g., 16GB RTX), long-context friendly |
+| GPTQ     | 4‑bit (INT4) | Single-stream or offline tools where slightly more variance is acceptable |
+| Either   | 3‑bit       | Experimental; more fragile, use only for controlled research |
+| Either   | 8‑bit       | Rarely needed vs FP16/BF16; prefer INT8/FP8 kernels or plain FP16 |
+
+In this book’s examples (e.g., Day 004), `--quantization awq` on an `*-AWQ` checkpoint means **4‑bit weight-only** quantization with **FP16/BF16 activations**, dequantized on the fly inside GEMM kernels.
+
+### Profiling Quantized Models with Nsight Systems
+
+To understand *why* quantization changes TTFT and throughput, profile at the kernel level:
+
+- **Nsight Systems** records a **timeline trace** of GPU kernels, memory copies, and CPU threads for a single run.  
+- Capture two short traces (e.g., ~200 output tokens): one for BF16, one for AWQ.  
+- In the GUI, compare:
+  - GEMM kernels (names, duration, tensor core utilization)  
+  - Presence of standalone dequantization kernels vs fused `int4_dequantize_and_gemm` kernels  
+  - FlashAttention latency (usually unchanged)  
+  - Extra memcpy / memory-bandwidth activity and kernel fragmentation (more small kernels per token)
+
+This lets you explain observations like *“AWQ adds ~10–15% TTFT from extra dequant kernels, but decode throughput remains similar because attention kernels still dominate.”*
+
 ---
 
 ## 5.3 Compiler Toolchains and Kernel Optimization
