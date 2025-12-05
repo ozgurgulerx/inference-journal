@@ -155,6 +155,103 @@ Works flawlessly with:
 
 ---
 
+## Quantization: What Actually Changes (INT4 AWQ/GPTQ)
+
+### 1. VRAM: Weight Compression (The Good Part)
+
+- BF16 weights: **2 bytes**; INT4 weights: **0.5 bytes**.  
+- In practice you often see **40–60% VRAM savings**, which converts directly into:
+  - More room for **KV cache** → higher safe concurrency.
+  - Ability to fit **larger models on smaller GPUs** (e.g., 7B on 8–12GB, 1.5B + generous KV on 16GB).
+
+> Mental model: *“Quant = more VRAM for KV cache → more concurrent users.”*
+
+### 2. HBM Traffic: Bandwidth Cost (The Price You Pay)
+
+- Runtimes store weights as **INT4**, but GEMMs still run in **FP16/BF16**. Each token step does:
+  1. Load INT4 weights from HBM.  
+  2. Dequantize to FP16/BF16.  
+  3. Apply per-channel/group scales.  
+  4. Feed into GEMM kernels.  
+- This adds:
+  - Extra memory reads and dequant kernels.  
+  - More L2/cache pressure and HBM bandwidth usage.  
+  - Slight increases in **TTFT** and sometimes **tail latency** for single-stream loads.
+
+**Why HBM traffic goes up (even though everything is on-GPU):**
+
+- You load **more than just weights**: INT4 chunks **plus** per-group scales and metadata (group structure, zero-points). Net bytes per GEMM tile often *increase* vs plain BF16.  
+- Dequantized FP16 weights **are not cached back to HBM** – they live briefly in registers/shared memory and are discarded, so every forward pass must **reload INT4 weights** from HBM.  
+- Quantization tends to **fragment kernels** (extra dequant/scale ops), so more small kernels each fetch their own tiles, reducing reuse and increasing total memory traffic.
+
+> Mental model: *“Quant = fewer FLOPs per token, more memory bandwidth pressure.”*
+
+### 3. CUDA Kernel Mix & Execution Graph (Behavior Shift)
+
+- BF16 execution path (simplified):
+
+  ```text
+  GEMM → GEMM → FlashAttention → LayerNorm → next token
+  ```
+
+- AWQ/GPTQ execution path (typical):
+
+  ```text
+  dequant/scale → GEMM → GEMM → FlashAttention → LayerNorm → next token
+  ```
+
+  (or fused `int4_dequantize_and_gemm` kernels if optimized)
+
+- Effects:
+  - **More kernels**, often smaller and more memory-bound.  
+  - Slightly more **kernel launch overhead** and CUDA Graph warmup work.  
+  - Decode-phase throughput often stays similar because **attention remains the bottleneck**, not weight precision.
+
+> One-liner (consulting version):  
+> **“Quantization trades a bit of latency for a lot of VRAM, turning a FLOPs bottleneck into a memory-bottleneck and buying you concurrency and lower cost.”**
+
+---
+
+## Why Quantization Wins at the System Level
+
+### 1. VRAM → Capacity (the main win)
+
+- INT4 shrinks weight storage (e.g., 1.5B BF16 weights ≈ 2.9 GB → INT4 ≈ 0.9–1.1 GB).  
+- vLLM converts freed VRAM into **KV cache**, so you can hold more active sequences at once.  
+- On a 16GB RTX-class GPU, that often means **2×+ more concurrent users at the same p95**, even if each request is slightly slower.
+
+> Enterprises don’t pay for raw TTFT; they pay for **throughput and concurrency capacity**.
+
+### 2. Bigger models on cheaper hardware
+
+- BF16 often forces “big model → big GPU” (e.g., 7B at long context wants A100/H100-class memory).  
+- INT4 lets you fit **7B/8B models on mid-tier 16–24GB GPUs** with meaningful concurrency.  
+- This unlocks migrations like “A100 → L40S/RTX” with large savings in $/hour.
+
+### 3. Lower $/1M tokens via higher system throughput
+
+- Single-stream decode may be similar or slightly slower (e.g., BF16 ≈ 300 tok/s vs INT4 ≈ 280 tok/s).  
+- But if BF16 supports 6 concurrent users and INT4 supports 14 at the same SLO:
+
+  ```text
+  BF16: 300 tok/s × 6  = 1,800 tok/s
+  INT4: 280 tok/s × 14 = 3,920 tok/s
+  ```
+
+- Net effect: **~2.2× throughput**, **~2× better cost/1M tokens**, **fewer GPUs for same traffic**.
+
+### 4. Overhead is small vs economics
+
+- Dequant adds maybe **5–15% TTFT** and **a few percent per-token overhead**, plus some HBM pressure.  
+- In exchange you get:
+  - Higher concurrency and tenant density.  
+  - Ability to run **bigger models** on **cheaper GPUs**.  
+  - Lower infra cost at a fixed SLA.
+
+> Quantization optimizes the **real bottleneck** in LLM serving (capacity/VRAM), not the kernel FLOP count.
+
+---
+
 ## Advanced Quantization Topics – Concrete Examples
 
 ### Quant capacity
@@ -223,4 +320,3 @@ Works flawlessly with:
   - Making A/B experiments cheaper by reducing the GPU footprint for each variant.  
   - Keeping a single “INT4-optimized” platform config instead of bespoke BF16 setups per model.  
 - Close with 2 bullets on **when INT4 is a bad idea** (e.g. safety-critical QA, strict factual accuracy), tied back to the failure modes you observed.
-
