@@ -4,7 +4,7 @@
 > **End Date**: March 10, 2026  
 > **Duration**: 100 days  
 > **Effort**: 3-4 hrs/day focused (20-25 hrs/week)  
-> **Goal**: Production-ready LLM serving & fine-tuning skills across *modern* architectures (transformers, long-context, MoE, state-space/hybrid), with the ability to design, tune, and justify real-world inference + SFT/RL stacks for clients.
+> **Goal**: Production-ready LLM serving & fine-tuning skills across *modern* architectures (transformers, long-context, MoE, state-space/hybrid), with the ability to design, tune, and justify real-world inference + SFT/RL **and institutional alignment** stacks for clients.
 
 ---
 
@@ -46,16 +46,24 @@ By March 10, 2026, you will have:
   and understanding how their attention/KV patterns change latency, memory, and capacity  
 - [ ] Hands-on experience with INT8/INT4 quantization (AWQ, GPTQ) and how it affects speed, VRAM, and output quality  
 - [ ] A clear mental model and practical tuning experience for **KV cache knobs** (max_model_len, max_num_seqs, block size, gpu_memory_utilization) and how they interact with attention modes and context length  
-- [ ] **1 end-to-end SFT/LoRA pipeline** for a real use case (code + evaluation + serving behind a runtime)  
-- [ ] **1 small RL-style alignment experiment** (e.g. DPO/ORPO or PPO via TRL) run end-to-end, with before/after evaluation  
+- [ ] **1 end-to-end SFT/LoRA + serving pipeline** for a real use case (code + evaluation + serving behind a runtime like vLLM/TRT-LLM)  
+- [ ] **1 institutional alignment loop** (e.g. DPO/GRPO or similar) run end-to-end:
+      - build a preference or reward dataset from logs or synthetic institutional scenarios,
+      - fine-tune a base model,
+      - re-deploy behind vLLM,
+      - and measure both **behavior change** and **serving impact** (latency, throughput, cost)  
 - [ ] 3+ benchmark or training repos with real numbers (latency, throughput, tokens/sec, cost) for different models/runtimes/configs  
-- [ ] 2 case studies that address **current inference challenges** (e.g. chat vs batch, long context, tool-using or multi-hop flows, or multi-tenant setups) with before/after optimization results  
+- [ ] **1 deep case study** that addresses a **current inference challenge** (e.g. chat vs batch, long context, tool-using flows, or multi-tenant setups) and shows:
+      - baseline serving,
+      - optimized vLLM/TRT-LLM deployment,
+      - and an institution-aligned variant of the model with before/after metrics  
 - [ ] 1 published blog post or talk that explains a modern inference challenge (e.g. KV cache & long context, quantization trade-offs, serving aligned models) and how you solved it  
-- [ ] A repeatable **Inference & Fine-Tuning Optimization Playbook** that covers:
+- [ ] A repeatable **Inference, Fine-Tuning & Alignment Optimization Playbook** that covers:
   - runtime choice (vLLM / TRT-LLM / Triton / vendor),
   - hardware & cost sizing,
   - KV/attention/quantization tuning,
-  - and SFT/RL options for typical consulting scenarios
+  - SFT/LoRA choices,
+  - and when/how to apply DPO/GRPO-style institutional alignment for typical consulting scenarios
 
 ### Technical Focus (What “Inference Engineering” Means Here)
 
@@ -76,7 +84,7 @@ Over these 100 days, “inference engineering” will explicitly cover:
 
 - **Training side needed for consulting**  
   - practical SFT/LoRA pipelines that can be deployed behind vLLM/TRT-LLM  
-  - small but real RL-style alignment experiments (DPO/ORPO/PPO) and how they affect serving capacity and cost
+  - **one concrete institutional alignment loop** (DPO/GRPO or similar) built from logs/preferences and wired back into your serving stack, and how alignment changes serving capacity, latency, and cost
 
 ---
 
@@ -257,6 +265,38 @@ Over these 100 days, “inference engineering” will explicitly cover:
 - [ ] Optimize for maximum throughput
 - [ ] Compare different parallelism strategies (if multi-GPU)
 - [ ] **Deliverable**: Second case study with ROI analysis
+
+---
+
+## Institutional Alignment Loop (Phase 3 Mini-Track)
+
+> Scope: a single, realistic institutional use case (e.g. credit desk copilot, support copilot) with one end-to-end DPO/GRPO-style loop wired back into your serving stack. No need to follow specific dates; treat this as a 7–10 day mini-sprint inside Phase 3.
+
+### Loop Outline
+
+- **Logging & Feedback Schema**
+  - Pick one institutional use case.
+  - Define a log schema: prompt `x`, response `y`, metadata (user/intent/policy flags), and a simple quality label (good/bad or 1–5 score).
+  - Add logging to your vLLM endpoint (JSONL / SQLite / Postgres).
+
+- **Build Preference / Reward Dataset**
+  - From logs or synthetic scenarios, construct:
+    - either `(x, y_good, y_bad)` pairs, or  
+    - `(x, y, score)` and convert to preferences.  
+  - Keep it small but realistic (~500–2000 pairs) and build a 10–30 prompt eval set with “ideal” responses.
+
+- **Run DPO/GRPO Fine-Tuning**
+  - Choose one method (DPO or GRPO) via TRL or similar.
+  - Fine-tune a ~7B model on the preference dataset.
+  - Track training stability, changes in answer length, and any obvious behavior shifts.
+
+- **Re-deploy & Benchmark**
+  - Load the aligned model into vLLM using the **same hardware/config** as the baseline.
+  - Run the same serving benchmarks (latency, throughput, tokens/sec, VRAM, concurrency).
+  - Run behavior evaluation on the eval set (success rate, policy adherence, “institutional style”).
+  - Capture a short before/after summary of both **behavior** and **serving impact** (latency, throughput, cost).
+
+Use this mini-track to feed one **institutional alignment case study** into Phase 4, rather than treating alignment as an isolated experiment.
 
 ---
 

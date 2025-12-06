@@ -42,4 +42,12 @@ Over these 100 days, “inference engineering” is explicitly tied to the curre
   - Practice: deliberately break configs to see OOM/timeouts; think through rollback/HA scenarios; integrate at least one basic guardrail/safety check in a pipeline.  
   - Goal: be able to outline a dependable serving story for a customer: availability, degradation modes, and basic safety/guardrail integration.
 
+- **Training, Alignment & Governance for Institutions**  
+  - Practice: build at least one practical SFT/LoRA pipeline that you can deploy behind vLLM/TRT-LLM; implement one concrete institutional alignment loop (DPO/GRPO or similar) from logs/preferences back into serving; add simple guardrails and eval hooks (policy checks, basic safety tests) and observe their latency/throughput impact.  
+  - Goal: explain to an enterprise stakeholder when to use SFT vs LoRA vs DPO/GRPO, how alignment shifts behavior **and** serving capacity/cost, and how to integrate minimal governance without breaking SLOs.
+
+- **Market & Service Positioning**  
+  - Practice: map your benchmarks, case study, and playbook to common consultancy offerings (Inference Health Check, Optimization Sprint, Alignment Sprint) and note where your approach (e.g. quant-under-concurrency + institutional alignment) goes deeper than typical vendor decks.  
+  - Goal: speak credibly about where your 100-day stack fits in the current consulting landscape and how it can be packaged as concrete services for clients.
+
 All of this is layered explicitly over the **hardware → kernel/compiler → runtime/engine → model/architecture → workload/product → business** stack you mapped in the research, so each hands-on day connects back to a real bottleneck and a real business lever.
