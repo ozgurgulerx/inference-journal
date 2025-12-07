@@ -191,6 +191,8 @@ nvcc --version
 | **TensorRT** | Optimized inference | `pip install tensorrt` or NGC container |
 | **NCCL** | Multi-GPU communication | `apt install libnccl2` |
 
+Scaling training and inference across multiple GPUs and nodes requires efficient communication. This often means optimizing collective operations using the NVIDIA Collective Communications Library (NCCL, pronounced "nickel") for primitives like all-reduce that are heavily used in large training runs. In addition, the NVIDIA Inference Xfer Library (NIXL) provides high throughput, low latency, point‑to‑point data movement across GPU memory and storage tiers for distributed inference. These libraries enable communication between GPUs on a single node or across large GPU clusters, and they optimize collective aggregation operations such as all-reduce, all-to-all, and all-gather that are ubiquitous in modern model training and inference workloads.
+
 ### Multi-Instance GPU (MIG)
 
 For A100/H100 GPUs, partition into smaller instances:

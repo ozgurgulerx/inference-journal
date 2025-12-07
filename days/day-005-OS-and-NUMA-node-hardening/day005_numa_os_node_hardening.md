@@ -135,8 +135,30 @@ This makes Day 5 not just a lab, but a building block for an **Inference Health 
 
 ## 4. Off-Hours Reading (Optional)
 
-- `man numactl`, `man taskset` – formalize what you used in the labs.  
-- Linux perf & scheduler docs (`man perf-stat`, `man perf-sched`) and a short blog/guide on using `perf stat` for latency analysis – to connect CPU migrations/context switches to p95 behavior.  
-- A “NUMA and performance tuning” write-up from a reputable source (e.g., Red Hat / SUSE / Intel) – to see how production teams think about local vs remote memory and noisy neighbors.  
-- An overview of cgroups v2 and systemd resource control (e.g., `systemd.resource-control` man page) – to prepare for expressing your pinning policies as slices/units instead of ad-hoc commands.  
-- vLLM deployment docs, especially flags that interact with memory/batching – to line up your OS-level tuning with future capacity/quantization experiments.
+Use these outside your core 3–4h block as a tight “Day 005 reading pack”:
+
+### Man pages (online mirrors)
+
+- `numactl` – NUMA policies & binding  
+  - https://man7.org/linux/man-pages/man8/numactl.8.html
+- `taskset` – CPU affinity  
+  - https://man7.org/linux/man-pages/man1/taskset.1.html
+- `perf-stat` – CPU/hardware counters  
+  - https://man7.org/linux/man-pages/man1/perf-stat.1.html
+- `perf-sched` – scheduler analysis  
+  - https://man7.org/linux/man-pages/man1/perf-sched.1.html
+
+### Perf & tooling overview
+
+- Brendan Gregg – `perf-tools` (Linux perf/ftrace tools overview)  
+  - https://github.com/brendangregg/perf-tools
+
+### Longer-term books (for coming weeks)
+
+- **Systems Performance, 2nd Edition** – especially CPUs, perf, methodology/observability chapters  
+  - https://www.brendangregg.com/systems-performance-2nd-edition-book.html
+- **BPF Performance Tools** – BPF-based observability (for when you go beyond perf)  
+  - https://www.brendangregg.com/bpf-performance-tools-book.html  
+  - https://github.com/brendangregg/bpf-perf-tools-book
+
+These anchor the tools you’re using today (numactl/taskset/perf) in the broader OS performance and observability ecosystem you’ll lean on later in the 100 days.
