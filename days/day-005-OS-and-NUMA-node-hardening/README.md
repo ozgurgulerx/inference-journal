@@ -69,6 +69,47 @@ By default, the OS does not statically bind CPU cores to their local NUMA memory
 
 ![Topology Hardening #1 – CPU↔NUMA](../assets/topo_1.png)
 
+#### Hardening #1 – Execution (Tier 1 / Tier 2)
+
+**Goal**  
+Ensure all CPU-bound DAG nodes (tokenizer, scheduler, sampler, runtime threads) run only on the NUMA node local to the GPU, and all their memory allocations come from that NUMA node.
+
+**How to apply it mechanically**
+
+1. Inspect topology:
+
+   ```bash
+   lscpu
+   numactl --hardware
+   nvidia-smi topo -m
+   ```
+
+2. Identify the NUMA node local to `GPU0`:
+   - Look for GPU0’s **CPU Affinity** in `nvidia-smi topo -m`, e.g. `0-15` ⇒ NUMA node 0.
+
+3. Launch the inference runtime pinned to those cores and DRAM:
+
+   ```bash
+   numactl --cpunodebind=0 --membind=0 \
+     taskset -c 0-11 \
+     python server.py
+   ```
+
+4. Disable automatic NUMA balancing (optional, but recommended on dedicated inference nodes):
+
+   ```bash
+   echo 0 | sudo tee /proc/sys/kernel/numa_balancing
+   ```
+
+5. Reinforce affinity at the service level (Tier 2) using systemd:
+
+   ```ini
+   [Service]
+   CPUAffinity=0-11
+   ```
+
+Relevant tiers: **Tier 1** (manual `numactl`/`taskset` pinning for experiments), **Tier 2** (encoding the same policy in systemd units).
+
 After CPU–NUMA affinity (Hardening #1), the second topological hardening is PCIe topology enforcement: understanding and aligning with the PCIe root complex, PCIe switch hierarchy (PIX/PXB/PHB), and GPU–GPU PCIe connectivity so that GPU workloads remain on their fastest possible PCIe paths.
 
 ### Topological Hardening #2 — PCIe Topology Awareness (Root Complex / Switch Affinity)
@@ -80,6 +121,50 @@ By default, inference runtimes ignore this structure. They may place a model sha
 The second layer of hardening is to respect the PCIe topology exposed in the diagram: each GPU must be paired with the CPU cores and memory on its own PCIe root, and multi-GPU workloads should be restricted to GPUs that share a root complex or switch. Communication-heavy tasks must avoid PHB (cross-root) paths, and no GPU should be driven by a CPU socket that does not own its PCIe parent. This alignment ensures that GPU-CPU and GPU-GPU communication stays on the shortest, highest-bandwidth I/O paths in the system.
 
 ![Topology Hardening #2 – PCIe](../assets/topo_2.png)
+
+#### Hardening #2 – Execution (Tier 1 / Tier 2)
+
+**Goal**  
+Ensure each GPU is driven by CPU cores within the same PCIe root complex and avoid PHB (cross-root) traffic for inference-critical paths.
+
+**How to apply it mechanically**
+
+1. Map PCIe roots:
+
+   ```bash
+   lspci -tv
+   ```
+
+2. Check GPU-to-GPU and GPU-to-CPU distances:
+
+   ```bash
+   nvidia-smi topo -m
+   ```
+
+   - `PIX`, `PXB` → same root/switch (preferred)  
+   - `PHB` → cross-root (slow, avoid for tight SLOs)
+
+3. Restrict model shard / tensor-parallel placement:
+   - Use only GPUs under the **same PCIe root** for collective-heavy work (tensor parallel, all-reduce, all-gather).
+
+4. Pin workers to the correct CPU domains (Tier 2 via systemd):
+
+   ```ini
+   # GPU0 under Root 0 / NUMA 0
+   CPUAffinity=0-11
+
+   # GPU2 under Root 2 / NUMA 1
+   CPUAffinity=16-23
+   ```
+
+5. Ensure the runtime respects these affinities. Example with vLLM:
+
+   ```bash
+   CUDA_VISIBLE_DEVICES=0 VLLM_CPU_AFFINITY=0-11 \
+     python -m vllm.entrypoints.api_server
+   ```
+
+Relevant tiers: **Tier 1** (reading topology, making informed GPU choices), **Tier 2** (baking PCIe-aware CPU affinity into long-lived services).
 
 ### Topological Hardening #3 — NVLink / NVSwitch Topology Awareness
 
@@ -95,6 +180,39 @@ Done right, GPU-to-GPU traffic stays on the fastest fabric, and you stop burning
 
 ![Topology Hardening #3 – NVLink/NVSwitch](../assets/topo_3.png)
 
+#### Hardening #3 – Execution (Tier 3 / Multi-GPU Work)
+
+**Goal**  
+Group GPUs along NVLink/NVSwitch islands—never stretch one model instance across GPUs that only see each other via PCIe/PHB.
+
+**How to apply it mechanically**
+
+1. Inspect NVLink connectivity:
+
+   ```bash
+   nvidia-smi topo -m
+   ```
+
+   - `NV1/NV2/NV4…` = NVLink paths  
+   - `PIX/PXB/PHB` = fallback PCIe/host paths
+
+2. Choose GPU groups that form an NVLink island. Example:
+
+   - `GPU0 <-> GPU1 <-> GPU2` all NVLink-connected  
+   - `GPU3` with no NVLink → isolate or use for a separate model.
+
+3. Configure tensor parallel or sharding to stay within that island. Example:
+
+   ```bash
+   # 3-way tensor parallel confined to GPUs 0,1,2
+   --tensor-parallel-size 3 \
+   --tensor-parallel-gpus 0,1,2
+   ```
+
+4. Avoid pipeline-parallel stages that cross NVLink boundaries; keep hot-path GPU↔GPU traffic on NVLink/NVSwitch fabric where possible.
+
+Relevant tiers: **Tier 3** (advanced multi-GPU topologies, later scaling work building on Day 005).
+
 ### Topological Hardening #4 — NIC ↔ NUMA ↔ GPU Triangulation
 
 For online inference, every request physically follows the same path: NIC → CPU cores → GPU → CPU → NIC. If the NIC, the CPU cores handling the request, and the GPU doing the work sit on different NUMA sides of the machine, each hop pays an extra cross-socket and remote-DRAM penalty. You effectively turn every token into a mini distributed system call inside a single server.
@@ -105,9 +223,74 @@ Once this triangle is closed—NIC, NUMA, GPU all aligned—network jitter stops
 
 ![Topology Hardening #4 – NIC↔NUMA↔GPU](../assets/topo_4.png)
 
+#### Hardening #4 – Execution (Tier 3 / Networked Inference)
+
+**Goal**  
+Align NIC interrupts, CPU threads, and GPU work on the same NUMA island so the ingress path doesn’t zig-zag across sockets.
+
+**How to apply it mechanically**
+
+1. Find the NIC’s NUMA node:
+
+   ```bash
+   cat /sys/class/net/<iface>/device/numa_node
+   ```
+
+2. Pin RSS queues and IRQs to local cores. Example:
+
+   ```bash
+   ethtool -X eth0 equal 8
+   ```
+
+   IRQ pinning:
+
+   ```bash
+   echo 2 > /proc/irq/<irq_number>/smp_affinity_list
+   ```
+
+3. Ensure the inference runtime uses the same core set (Tier 3 + systemd):
+
+   ```ini
+   [Service]
+   CPUAffinity=0-11
+   ```
+
+4. Bind server memory allocations to that NUMA node:
+
+   ```bash
+   numactl --membind=0 python server.py
+   ```
+
+5. Confirm the GPU is under this NUMA node using:
+
+   ```bash
+   nvidia-smi topo -m
+   ```
+
+Relevant tiers: **Tier 3** (noisy-neighbor / IRQ work, remote clients, production-grade network tuning).
+
 Together, these four topological hardenings turn a generic GPU server into a deterministic inference machine. NUMA affinity ensures CPU locality, PCIe awareness keeps GPU-CPU paths short, NVLink topology shapes efficient multi-GPU execution, and NIC–NUMA–GPU triangulation locks down the network ingress path. Once the hardware is mapped correctly and each component is placed on its optimal island, the entire inference DAG behaves predictably. Latency stops drifting, throughput stabilizes, and the model’s performance reflects fundamental limits—not avoidable topology mistakes. This is the foundation on which every higher-level optimization in LLM serving must be built.
 
 ![Node Hardening Playbook](../assets/node_hardenning_playbook.png)
 
-Istanbul, 9th December 2025
+#### Ultra-Terse Execution Checklist (Across Tiers)
 
+```text
+#1 CPU–NUMA Affinity (Tier 1/2):
+  Pin hot-path CPU threads + memory to NUMA node local to GPU.
+  (numactl, CPUAffinity, disable NUMA balancing)
+
+#2 PCIe Topology Awareness (Tier 1/2):
+  Keep GPU workloads inside their PCIe root complex.
+  Avoid PHB. Map topology (nvidia-smi topo -m, lspci).
+
+#3 NVLink Topology Awareness (Tier 3):
+  Only shard / parallelize across NVLink-connected GPUs.
+  Never stretch a model across PCIe-only pairs.
+
+#4 NIC–NUMA–GPU Triangulation (Tier 3):
+  Align NIC IRQs, CPU cores, and GPU affinity on same NUMA node.
+  RSS/IRQ pinning + CPU affinity + membind.
+```
+
+Istanbul, 9th December 2025

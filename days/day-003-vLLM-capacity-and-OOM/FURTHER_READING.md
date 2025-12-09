@@ -9,6 +9,10 @@ This page collects the main references and patterns behind the metrics and insti
 📘 **[INFERENCE_PERFORMANCE_BEST_PRACTICES.md](INFERENCE_PERFORMANCE_BEST_PRACTICES.md)** — Local guide  
 A comprehensive systems-first playbook covering hardware, model, systems, and algorithmic best practices. Synthesizes Databricks/MosaicML, NVIDIA, and vLLM patterns into actionable decisions.
 
+**Fastest GPU kernels, written from scratch — `fast.cu`**  
+Collection of hand-written CUDA kernels and micro-optimizations for understanding how to push GPUs to their limits and reason about kernel-level bottlenecks.  
+👉 https://github.com/pranjalssh/fast.cu
+
 **LLM Inference Performance Engineering: Best Practices — Databricks Mosaic AI**  
 Great end-to-end overview of how output length, context length, batching, and hardware choices affect latency and throughput. Also sets up the basic "tokens/s per GPU at an SLO" mental model.  
 👉 https://www.databricks.com/blog/llm-inference-performance-engineering-best-practices
