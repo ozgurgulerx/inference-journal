@@ -87,6 +87,16 @@ Ensure all CPU-bound DAG nodes (tokenizer, scheduler, sampler, runtime threads) 
 2. Identify the NUMA node local to `GPU0`:
    - Look for GPU0’s **CPU Affinity** in `nvidia-smi topo -m`, e.g. `0-15` ⇒ NUMA node 0.
 
+   Example (abridged):
+
+   ```text
+   GPU    GPU0  GPU1  CPU Affinity
+   GPU0     X   NV1   0-15
+   GPU1   NV1     X   16-31
+   ```
+
+   Here, `GPU0` is local to cores `0-15` (NUMA node 0), and `GPU1` is local to cores `16-31` (NUMA node 1).
+
 3. Launch the inference runtime pinned to those cores and DRAM:
 
    ```bash
@@ -272,6 +282,31 @@ Relevant tiers: **Tier 3** (noisy-neighbor / IRQ work, remote clients, productio
 Together, these four topological hardenings turn a generic GPU server into a deterministic inference machine. NUMA affinity ensures CPU locality, PCIe awareness keeps GPU-CPU paths short, NVLink topology shapes efficient multi-GPU execution, and NIC–NUMA–GPU triangulation locks down the network ingress path. Once the hardware is mapped correctly and each component is placed on its optimal island, the entire inference DAG behaves predictably. Latency stops drifting, throughput stabilizes, and the model’s performance reflects fundamental limits—not avoidable topology mistakes. This is the foundation on which every higher-level optimization in LLM serving must be built.
 
 ![Node Hardening Playbook](../assets/node_hardenning_playbook.png)
+
+### Pitfalls & Anti-Patterns
+
+- Pinning to the wrong NUMA node (remote DRAM everywhere, hidden latency).  
+- Over-pinning all cores and starving background OS work (I/O, interrupts, housekeeping).  
+- Ignoring the difference between physical cores and hyper-threads when choosing CPU ranges.  
+- Letting `irqbalance` or other daemons undo manual IRQ and CPU affinity decisions.  
+- Assuming topology is static—instance types, GPU counts, and NIC wiring can change; re-check regularly.
+
+### Recommended Node Profile (Example)
+
+An example “good default” for a single-GPU, latency-sensitive inference node:
+
+- **CPU governor**: `performance` for GPU-local cores serving inference.  
+- **NUMA policy**: `numactl --cpunodebind=0 --membind=0` for GPU0’s NUMA node (adjust per topology).  
+- **CPU affinity**: e.g. `CPUAffinity=0-11` for the inference runtime’s main workers.  
+- **NUMA balancing**: `/proc/sys/kernel/numa_balancing = 0` on dedicated inference nodes.  
+- **Network**: NIC, IRQs, and RSS queues for GPU0/1 traffic aligned with the same NUMA node.
+
+### Further Reading
+
+- OS, drivers, CUDA stack, and NUMA basics:  
+  `books/inference-engineering/chapters/02-os-essentials.md`  
+- Multi-GPU and multi-node scaling patterns that build on this node-hardening work:  
+  `books/inference-engineering/chapters/07-scaling.md`
 
 #### Ultra-Terse Execution Checklist (Across Tiers)
 

@@ -24,9 +24,9 @@
 |-----|------|-------|--------|
 | [001](day-001-initial-setup/) | Dec 1 | Initial Setup | ✅ |
 | [002](day-002-GPU-node-bring-up/) | Dec 2 | GPU Node Bring-Up | 🔄 |
-| 003 | Dec 3 | GPU Node Bring-Up | ⏳ |
-| 004 | Dec 4 | CPU & NUMA | ⏳ |
-| 005 | Dec 5 | CPU & NUMA | ⏳ |
+| [003](day-003-vLLM-capacity-and-OOM/) | Dec 3 | vLLM Capacity & OOM | ⏳ |
+| [004](day-004-quantization-vs-bf16/) | Dec 4 | Quantization vs BF16 | ⏳ |
+| [005](day-005-OS-and-NUMA-node-hardening/) | Dec 5 | OS & NUMA Node Hardening | ⏳ |
 | ... | | | |
 
 ---
