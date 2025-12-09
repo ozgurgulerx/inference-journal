@@ -34,3 +34,80 @@
 - **Day 003 – vLLM Capacity & OOM**: capacity grids that will later run on this hardened node.  
 - **Day 004 – Quantization vs BF16**: quantized vs BF16 capacity/quality experiments that will benefit from a stable OS/NUMA baseline.
 
+---
+
+## Conceptual Overview – Inference as a DAG & Topological Hardening
+
+*(This post is part of 100 Days of Inference Engineering being documented on GitHub. Let’s learn together…)*  
+
+Inference is a DAG executed across CPU, GPU, memory, and I/O. The model’s forward pass happens on the GPU—matmuls, attention, and KV-cache operations—but everything that feeds the GPU lives on the CPU. Tokenizers, schedulers, batchers, samplers, KV-cache metadata logic, and all request parsing and networking are CPU-bound. A GPU is only fast if the CPU delivers work quickly, accesses local memory, and avoids cross-NUMA chatter.
+
+![Inference DAG – simple view](../assets/dag_simple.png)
+
+Hardware topology determines how well this pipeline flows: which CPU cores and DRAM are local to a GPU, which PCIe root or switch the GPU hangs off of, how GPUs are interconnected via NVLink, and which NIC injects traffic into which NUMA domain. Mapping this topology correctly is the foundation of predictable, low-latency inference.
+
+This diagram exposes the physical cost of each DAG edge:
+
+- CPU-to-GPU edges → PCIe latency  
+- CPU-to-memory edges → NUMA-local vs remote latency  
+- CPU thread scheduling edges → cross-socket penalties  
+- GPU kernel edges → kernel launch overhead + scheduling jitter  
+
+![Inference DAG – annotated topology](../assets/dag_colored.png)
+
+By pinning nodes of the DAG to hardware, you collapse latency along these edges. This is the whole principle behind OS/NUMA hardening.
+
+![CPU-bound segments](../assets/cpu_bound.png)
+
+Topological optimisation techniques such as NUMA pinning and CPU pinning force the OS to respect the DAG’s physical structure, eliminating cross-node penalties and making latency predictable. Here is the full set of “topological hardening” methods for this node.
+
+### Topological Hardening #1 — CPU ↔ NUMA Affinity Enforcement
+
+As core counts increased, a single shared memory controller became a fundamental bottleneck because too many CPU cores were competing for the same memory channels. Modern CPUs solve this by splitting the processor into multiple core groups—often called chiplets—where each group has its own memory controller and directly attached DRAM. This creates physically distinct memory regions: DRAM that is “local” to one chiplet is “remote” to others, accessed through a slower interconnect. The OS reflects this hardware reality by grouping each chiplet (or socket) together with its local DRAM and memory controller into a NUMA node. In an ideal case, cores should access only their local NUMA memory to avoid the extra latency and bandwidth penalties of remote memory access.
+
+By default, the OS does not statically bind CPU cores to their local NUMA memory; the scheduler is free to migrate threads across cores and NUMA nodes, and the kernel may even move memory pages between nodes via automatic NUMA balancing. This “smart” behavior is good for generic workloads but terrible for low-latency inference, because it silently introduces remote memory accesses and cross-node hops. The first layer of hardening is to override this default: pin hot-path threads to a specific set of cores on the NUMA node local to the GPU, and bind their memory allocations to that same node.
+
+![Topology Hardening #1 – CPU↔NUMA](../assets/topo_1.png)
+
+After CPU–NUMA affinity (Hardening #1), the second topological hardening is PCIe topology enforcement: understanding and aligning with the PCIe root complex, PCIe switch hierarchy (PIX/PXB/PHB), and GPU–GPU PCIe connectivity so that GPU workloads remain on their fastest possible PCIe paths.
+
+### Topological Hardening #2 — PCIe Topology Awareness (Root Complex / Switch Affinity)
+
+In a multi-socket, multi-GPU server, each CPU socket exposes its own PCIe root complexes, and GPUs attach underneath them. This creates non-uniform I/O paths: a GPU sitting under PCIe Root 0 (owned by CPU Socket 0 → NUMA 0) is topologically close to cores 0–15 and far from cores 16–31.
+
+By default, inference runtimes ignore this structure. They may place a model shard on GPU0 and GPU2 even though those GPUs live on opposite PCIe roots and must communicate through a slow cross-socket path. They may also schedule GPU0’s workers on CPU cores belonging to the wrong NUMA domain. These mismatches introduce hidden latency, reduce PCIe bandwidth, and destabilize p95/p99 inference behavior.
+
+The second layer of hardening is to respect the PCIe topology exposed in the diagram: each GPU must be paired with the CPU cores and memory on its own PCIe root, and multi-GPU workloads should be restricted to GPUs that share a root complex or switch. Communication-heavy tasks must avoid PHB (cross-root) paths, and no GPU should be driven by a CPU socket that does not own its PCIe parent. This alignment ensures that GPU-CPU and GPU-GPU communication stays on the shortest, highest-bandwidth I/O paths in the system.
+
+![Topology Hardening #2 – PCIe](../assets/topo_2.png)
+
+### Topological Hardening #3 — NVLink / NVSwitch Topology Awareness
+
+Multi-GPU inference is only fast if your GPUs are talking over the right wires. NVLink and NVSwitch create high-bandwidth GPU islands: some GPUs can exchange activations and KV cache at huge speed; others can only reach each other through slow PCIe and host bridges. If you ignore this, your “multi-GPU model” quietly runs over the worst possible paths.
+
+Hardening #3 is simple but brutal in its implications:
+
+- Only group GPUs that are NVLink/NVSwitch-connected into the same model instance.  
+- Keep tensor parallel, pipeline stages, and sharded KV cache inside those NVLink islands.  
+- Never stretch one logical model across GPUs that only see each other via PHB.  
+
+Done right, GPU-to-GPU traffic stays on the fastest fabric, and you stop burning your throughput and p95/p99 on topology mistakes instead of model limits.
+
+![Topology Hardening #3 – NVLink/NVSwitch](../assets/topo_3.png)
+
+### Topological Hardening #4 — NIC ↔ NUMA ↔ GPU Triangulation
+
+For online inference, every request physically follows the same path: NIC → CPU cores → GPU → CPU → NIC. If the NIC, the CPU cores handling the request, and the GPU doing the work sit on different NUMA sides of the machine, each hop pays an extra cross-socket and remote-DRAM penalty. You effectively turn every token into a mini distributed system call inside a single server.
+
+NIC ↔ NUMA ↔ GPU triangulation is about collapsing that path into a local island. The NIC that receives traffic for a given GPU should terminate interrupts on the same NUMA node as that GPU; RSS queues and IRQs are pinned to those local cores, the inference server’s hot-path threads are pinned to those same cores, and their memory allocations are bound to that NUMA node. Traffic for GPU0/1 consistently flows through NIC0 + NUMA0, and traffic for GPU2/3 flows through NIC1 + NUMA1, instead of bouncing across sockets.
+
+Once this triangle is closed—NIC, NUMA, GPU all aligned—network jitter stops turning into mysterious p95/p99 spikes, and your end-to-end latency is limited by the model and hardware, not by accidental tours of the server’s interconnect.
+
+![Topology Hardening #4 – NIC↔NUMA↔GPU](../assets/topo_4.png)
+
+Together, these four topological hardenings turn a generic GPU server into a deterministic inference machine. NUMA affinity ensures CPU locality, PCIe awareness keeps GPU-CPU paths short, NVLink topology shapes efficient multi-GPU execution, and NIC–NUMA–GPU triangulation locks down the network ingress path. Once the hardware is mapped correctly and each component is placed on its optimal island, the entire inference DAG behaves predictably. Latency stops drifting, throughput stabilizes, and the model’s performance reflects fundamental limits—not avoidable topology mistakes. This is the foundation on which every higher-level optimization in LLM serving must be built.
+
+![Node Hardening Playbook](../assets/node_hardenning_playbook.png)
+
+Istanbul, 9th December 2025
+
