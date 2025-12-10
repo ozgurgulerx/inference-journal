@@ -414,8 +414,3 @@ What slowed me down.
 What's next.
 ```
 
----
-
-<p align="center">
-  <a href="README.md">← Back to Days Index</a>
-</p>

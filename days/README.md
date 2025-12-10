@@ -27,6 +27,7 @@
 | [003](day-003-vLLM-capacity-and-OOM/) | Dec 3 | vLLM Capacity & OOM | ⏳ |
 | [004](day-004-quantization-vs-bf16/) | Dec 4 | Quantization vs BF16 | ⏳ |
 | [005](day-005-OS-and-NUMA-node-hardening/) | Dec 5 | OS & NUMA Node Hardening | ⏳ |
+| [006](day-006-slm-memory/) | Dec 6–7 | SLM + OS Memory & vLLM | ⏳ |
 | ... | | | |
 
 ---
