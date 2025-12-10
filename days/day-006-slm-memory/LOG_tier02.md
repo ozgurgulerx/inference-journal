@@ -23,7 +23,7 @@ sudo apt-get update
 sudo apt-get install -y libjemalloc2
 ```
 
-#### 2. Create a Tiny SLM Generation Script
+#### 2. Create a Tiny SLM Generation Script (Multiple Prompt Types)
 
 `days/day-006-slm-memory/slm_gen_latency.py`:
 
@@ -40,18 +40,30 @@ model = AutoModelForCausalLM.from_pretrained(
     device_map="auto",
 )
 
-prompt = "Explain NUMA-aware inference in 2 short bullet points."
-inputs = tok(prompt, return_tensors="pt").to(model.device)
+PROMPTS = {
+    "short": "Explain NUMA-aware inference in 2 short bullet points.",
+    "long": (
+        "Explain NUMA-aware inference and OS node hardening in detail, "
+        "covering CPU pinning, memory locality, and PCIe/NVLink topology."
+    ),
+}
 
-torch.cuda.synchronize()
-t0 = time.time()
-out = model.generate(**inputs, max_new_tokens=64)
-torch.cuda.synchronize()
-print("gen_latency_s", time.time() - t0)
-print(tok.decode(out[0], skip_special_tokens=True))
+def run_one(kind: str, text: str) -> None:
+  inputs = tok(text, return_tensors="pt").to(model.device)
+  torch.cuda.synchronize()
+  t0 = time.time()
+  out = model.generate(**inputs, max_new_tokens=64)
+  torch.cuda.synchronize()
+  lat = time.time() - t0
+  print(f"prompt_type={kind} gen_latency_s={lat:.4f}")
+
+
+if __name__ == "__main__":
+  for kind, text in PROMPTS.items():
+    run_one(kind, text)
 ```
 
-#### 3. Run with Default Allocator vs jemalloc
+#### 3. Run with Default Allocator vs jemalloc (Per Prompt Type)
 
 From `days/day-006-slm-memory`:
 
@@ -64,7 +76,7 @@ LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
 
 Capture from output:
 
-- `gen_latency_s` (printed).  
+- `prompt_type` and `gen_latency_s` (printed).  
 - `glibc_real_s` / `jemalloc_real_s`.  
 - Optionally RSS via:
 
@@ -72,17 +84,19 @@ Capture from output:
   ps -C python -o pid,rss,vsz,cmd | head -n 5
   ```
 
-#### 4. Write a Quick CSV
+#### 4. Write a Quick CSV (Multiple Rows)
 
 `days/day-006-slm-memory/allocator_latency_comparison.csv`:
 
 ```text
-allocator,gen_latency_s,wall_real_s,rss_mb
-glibc, ... , ... , ...
-jemalloc, ... , ... , ...
+allocator,prompt_type,gen_latency_s,wall_real_s,rss_mb
+glibc,short,...,...,...
+glibc,long,...,...,...
+jemalloc,short,...,...,...
+jemalloc,long,...,...,...
 ```
 
-Add 3–5 bullets in `README.md` summarizing whether jemalloc helped (and by how much).
+Add 3–5 bullets in `README.md` summarizing whether jemalloc helped (and by how much), and whether the effect differs between short and long prompts.
 
 ---
 
@@ -112,7 +126,7 @@ Keep this server running in one terminal.
 In another terminal:
 
 ```bash
-# cold
+# simple single-sample cold/warm
 /usr/bin/time -f "cold_req_real_s=%E" curl -s http://localhost:8000/v1/completions \
   -H "Content-Type: application/json" \
   -d '{
@@ -121,7 +135,6 @@ In another terminal:
     "max_tokens": 16
   }' > /tmp/vllm_cold.json
 
-# warm (immediately after)
 /usr/bin/time -f "warm_req_real_s=%E" curl -s http://localhost:8000/v1/completions \
   -H "Content-Type: application/json" \
   -d '{
@@ -129,9 +142,20 @@ In another terminal:
     "prompt": "test warm",
     "max_tokens": 16
   }' > /tmp/vllm_warm.json
+
+# optional: small loop to get basic tail metrics
+for i in $(seq 1 5); do
+  /usr/bin/time -f "warm_req_run=$i real_s=%E" curl -s http://localhost:8000/v1/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "microsoft/Phi-3-mini-4k-instruct",
+      "prompt": "test warm repeated",
+      "max_tokens": 16
+    }' > /tmp/vllm_warm_$i.json
+done
 ```
 
-Record both wall times and, if possible, approximate TTFT from logs.
+Record both wall times and, if possible, approximate TTFT from logs. For the loop, compute a quick min/median/max (or rough p95) across the warm runs.
 
 #### 3. Track GPU Memory Before/After
 
@@ -159,4 +183,3 @@ Create `days/day-007-vllm-slm/first_token_latency.md` with:
 - `days/day-006-slm-memory/slm_gen_latency.py`  
 - `days/day-006-slm-memory/allocator_latency_comparison.csv`  
 - `days/day-007-vllm-slm/first_token_latency.md`
-

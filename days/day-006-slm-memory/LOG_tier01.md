@@ -32,7 +32,7 @@ Document the chosen model at the top of `slm_load.py` and in `README.md`.
 
 ---
 
-### 2. Inspect Current Memory / THP State
+### 2. Inspect Current Memory / THP State (Baseline)
 
 Capture the current hugepage/THP configuration:
 
@@ -44,9 +44,29 @@ cat /sys/kernel/mm/transparent_hugepage/defrag || true
 
 Save these snippets into `README.md` or a small `thp_state_before.txt` if desired.
 
+Optionally, treat this as **THP Mode A** (current defaults) for a before/after comparison.
+
 ---
 
-### 3. Configure THP + Hugepages for Inference
+### 3. THP/Hugepages Before/After Experiment
+
+First, run a **baseline load test** under the current THP settings:
+
+```bash
+sudo sync; echo 3 | sudo tee /proc/sys/vm/drop_caches
+/usr/bin/time -f "thp_mode=A (current) cold_load_real_s=%E" python slm_load.py
+
+/usr/bin/time -f "thp_mode=A (current) warm_load_real_s=%E" python slm_load.py
+```
+
+Capture these values in a CSV like `thp_load_comparison.csv`:
+
+```text
+thp_mode,cold_load_real_s,warm_load_real_s,rss_mb
+A-current,....,....,...
+```
+
+Then configure THP + hugepages for inference, treating this as **THP Mode B**:
 
 Tweak towards “explicit big pages, no surprise THP everywhere”:
 
@@ -60,6 +80,23 @@ echo 1024 | sudo tee /proc/sys/vm/nr_hugepages
 
 Note the exact values you set in `README.md` (THP mode, `nr_hugepages`).
 
+Run the load test again under Mode B:
+
+```bash
+sudo sync; echo 3 | sudo tee /proc/sys/vm/drop_caches
+/usr/bin/time -f "thp_mode=B (madvise+hugepages) cold_load_real_s=%E" python slm_load.py
+
+/usr/bin/time -f "thp_mode=B (madvise+hugepages) warm_load_real_s=%E" python slm_load.py
+```
+
+Append these values to `thp_load_comparison.csv`:
+
+```text
+thp_mode,cold_load_real_s,warm_load_real_s,rss_mb
+A-current,....,....,...
+B-madvise,....,....,...
+```
+
 ---
 
 ### 4. Mount a Hugepage Filesystem (Optional but Useful Later)
@@ -70,6 +107,17 @@ sudo mount -t hugetlbfs none /mnt/huge
 ```
 
 You’ll likely use this later for pinned allocations / experiments; for now, just note that it exists.
+
+#### Reverting THP/Hugepages (Safety)
+
+If you need to revert to more typical defaults after experiments:
+
+```bash
+echo always | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+echo 0      | sudo tee /proc/sys/vm/nr_hugepages
+```
+
+Adjust back to your environment’s standard policy as needed.
 
 ---
 
@@ -111,6 +159,8 @@ sudo sync; echo 3 | sudo tee /proc/sys/vm/drop_caches
 
 Record the `cold_load_real_s` and `warm_load_real_s` values (and any notable console logs) into `README.md`.
 
+If you maintained `thp_load_comparison.csv`, ensure both Mode A and Mode B rows include an approximate `rss_mb` column derived from the next step.
+
 ---
 
 ### 7. Capture Host Memory Footprint After Load
@@ -122,6 +172,8 @@ ps -C python -o pid,rss,vsz,cmd | head -n 5
 ```
 
 Optionally convert RSS/VSZ to MB/GB in `README.md` for clarity.
+
+You can reuse these RSS numbers to populate the `rss_mb` column in `thp_load_comparison.csv` for both THP modes.
 
 ---
 
@@ -140,4 +192,3 @@ Create or update `days/day-006-slm-memory/README.md` with:
 
 - `days/day-006-slm-memory/slm_load.py`  
 - `days/day-006-slm-memory/README.md` (short, with config + numbers)
-
