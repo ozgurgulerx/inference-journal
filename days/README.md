@@ -6,6 +6,8 @@
 
 ---
 
+Throughout this 100-day journey I’m also using **NotebookLM** and **OpenAI DeepResearch** extensively—to synthesize reading, design experiments, and pressure-test my own explanations as I go.
+
 ## The 100-Day Plan
 
 | Phase | Days | Dates | Focus |

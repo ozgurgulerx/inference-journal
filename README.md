@@ -6,6 +6,8 @@ This repo is my journey into **inference engineering**: building, scaling, and o
 
 > A story of revival and redemption — moving from “just using APIs” to truly understanding how tokens move through silicon.
 
+Along the way, I lean heavily on **NotebookLM** and **OpenAI DeepResearch** as research companions—summarizing papers, cross-checking claims, and helping design experiments and reading paths for this journal.
+
 ## What this repo is
 
 This is a **working lab notebook**, not a polished course. You’ll find:
