@@ -7,6 +7,11 @@
 
 ---
 
+**Related theory**:
+
+- `theory/kv_cache.md` – KV cache scaling laws and PagedAttention’s impact on capacity.  
+- `theory/slms_as_probes.md` – why SLMs are perfect for KV and batching probes.
+
 ## Tier 3 – Stretch (Optional / Ambitious)
 
 **Title** – vLLM KV Cache Scaling + Micro-Batching with SLM  
@@ -27,7 +32,7 @@ set -e
 MODEL="microsoft/Phi-3-mini-4k-instruct"
 echo "max_model_len,gpu_mem_used_mb" > kv_cache_scaling.csv
 
-for L in 512 1024 2048 4096; do
+for L in 512 1024 2048 4096; do  # extend this list (e.g. 8192, 16384) as your GPU allows
   python -m vllm.entrypoints.openai.api_server \
     --model "$MODEL" \
     --dtype auto \
@@ -56,15 +61,17 @@ chmod +x kv_scaling.sh
 
 Look for:
 
-- Rough linearity between `max-model-len` and `gpu_mem_used_mb`.  
-- Any unexpected jumps (e.g., block allocations, fragmentation behavior).
+- Rough linearity between `max-model-len` and `gpu_mem_used_mb` (KV cache grows ~linearly with context).  
+- Any unexpected jumps (e.g., page/block allocation thresholds, fragmentation artifacts).  
+- At which `max-model-len` values GPU memory usage starts to leave too little headroom for batching and concurrency.
 
 #### 3. Add Commentary
 
 Create `days/day-007-vllm-slm/kv_cache_scaling_notes.md` (5–10 lines) answering:
 
-- How memory scales with `max-model-len`.  
-- How this affects your recommended `max-model-len` choices for real deployments on this GPU class.
+- How memory scales with `max-model-len` on this GPU (does it match the expectations from `theory/kv_cache.md`?).  
+- How much headroom remains for additional sequences / batching at each length.  
+- Which `max-model-len` values you would recommend for real deployments (balance between long context and safe concurrency).
 
 ---
 
@@ -153,4 +160,3 @@ Create `days/day-007-vllm-slm/batching_benchmark.md`:
 - `days/day-007-vllm-slm/kv_cache_scaling_notes.md`  
 - `days/day-007-vllm-slm/batch_client.py`  
 - `days/day-007-vllm-slm/batching_benchmark.md`
-

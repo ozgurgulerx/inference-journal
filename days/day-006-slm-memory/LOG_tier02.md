@@ -7,6 +7,12 @@
 
 ---
 
+**Related theory**:
+
+- `theory/day06_theory_malloc.md` – glibc vs jemalloc, fragmentation, RSS, and tail latency.  
+- `theory/slms_as_probes.md` – SLMs as diagnostic instruments for allocator and TTFT behavior.  
+- `theory/caching_cold_warm_loads.md` – how page cache and memory pressure shape cold vs warm requests.
+
 ## Tier 2 – Deepen (If Time/Energy Allow)
 
 **Title** – Allocator & vLLM First-Token Latency (SLM as probe)  
@@ -155,7 +161,7 @@ for i in $(seq 1 5); do
 done
 ```
 
-Record both wall times and, if possible, approximate TTFT from logs. For the loop, compute a quick min/median/max (or rough p95) across the warm runs.
+Record both wall times and, if possible, approximate **TTFT** (time-to-first-token) from logs. For the loop, compute a quick min/median/max (or rough p95) across the warm runs so you see **distribution**, not just a single sample.
 
 #### 3. Track GPU Memory Before/After
 

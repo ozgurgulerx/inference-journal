@@ -5,6 +5,12 @@
 
 ---
 
+**Related theory**:
+
+- `theory/slms_as_probes.md` – why SLMs are ideal OS/runtime probes.  
+- `theory/day06_theory_huge_pages.md` – pages, THP vs explicit hugepages, DMA/IOMMU.  
+- `theory/caching_cold_warm_loads.md` – page cache, cold vs warm loads, and tunable knobs.
+
 ## Tier 1 – Must Do (Core Block)
 
 **Title** – SLM + OS Memory Baseline (THP, hugepages, cold/warm load)  
@@ -58,6 +64,8 @@ sudo sync; echo 3 | sudo tee /proc/sys/vm/drop_caches
 
 /usr/bin/time -f "thp_mode=A (current) warm_load_real_s=%E" python slm_load.py
 ```
+
+> **Note**: `drop_caches` is safe for experiments on a lab node but should never be used on production machines; it intentionally discards the page cache. See `theory/caching_cold_warm_loads.md` for guidance.
 
 Capture these values in a CSV like `thp_load_comparison.csv`:
 
