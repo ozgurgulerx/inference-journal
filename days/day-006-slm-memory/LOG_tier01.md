@@ -196,6 +196,35 @@ Create or update `days/day-006-slm-memory/README.md` with:
 
 ---
 
+### 9. Optional: Pinned Memory & Disk Baseline
+
+To connect Tier 1 more directly to GPU pinning and disk behavior:
+
+1. **Pinned memory sanity check**
+
+   ```bash
+   CUDA_VISIBLE_DEVICES=0 python - << 'EOF'
+   import torch
+   x = torch.randn(1024, device="cuda")
+   print("Allocated tensor on", x.device)
+   EOF
+   ```
+
+   - Confirms CUDA can allocate on the GPU under your current THP/hugepage config.  
+   - If you see odd delays or errors here, note them; they may correlate with pinned‑memory pool behavior later.
+
+2. **Disk throughput quick check**
+
+   ```bash
+   # Replace /dev/nvme0n1 with the device holding your model weights
+   sudo hdparm -tT /dev/nvme0n1
+   ```
+
+   - Record the cached (`Timing cached reads`) and buffered (`Timing buffered disk reads`) numbers.  
+   - Helps interpret very slow cold loads (could be storage‑bound rather than THP/OS issues).
+
+Capture any observations in `README.md` under a short “Pinned memory & disk baseline” subsection.
+
 ### Tier 1 Artifacts
 
 - `days/day-006-slm-memory/slm_load.py`  

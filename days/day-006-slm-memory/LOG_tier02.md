@@ -163,6 +163,57 @@ done
 
 Record both wall times and, if possible, approximate **TTFT** (time-to-first-token) from logs. For the loop, compute a quick min/median/max (or rough p95) across the warm runs so you see **distribution**, not just a single sample.
 
+#### 2.1 Optional: Separate First-Token vs End-to-End Latency
+
+To explicitly split TTFT from full response time, create `days/day-007-vllm-slm/ft_latency_client.py`:
+
+```python
+import time, requests
+
+URL = "http://localhost:8000/v1/completions"
+payload = {
+    "model": "microsoft/Phi-3-mini-4k-instruct",
+    "prompt": "Explain NUMA-aware inference in one sentence.",
+    "max_tokens": 64,
+    "stream": True,
+}
+
+
+def measure_once() -> None:
+    t0 = time.time()
+    first_token_t = None
+    text = ""
+
+    with requests.post(URL, json=payload, stream=True) as r:
+        for chunk in r.iter_lines():
+            if not chunk:
+                continue
+            if first_token_t is None:
+                first_token_t = time.time()
+            text += chunk.decode("utf-8")
+
+    t_end = time.time()
+    print(
+        f"ttft_s={first_token_t - t0:.4f} "
+        f"e2e_s={t_end - t0:.4f}"
+    )
+
+
+if __name__ == "__main__":
+    for i in range(5):
+        print(f"run={i+1}")
+        measure_once()
+```
+
+Run this while vLLM is up:
+
+```bash
+cd days/day-007-vllm-slm
+python ft_latency_client.py
+```
+
+Log both `ttft_s` and `e2e_s` across runs. This makes it clear whether OS / allocator / warm‑start effects mainly hit TTFT, decode, or both.
+
 #### 3. Track GPU Memory Before/After
 
 ```bash
@@ -172,6 +223,16 @@ nvidia-smi --query-gpu=memory.used --format=csv -l 1
 - Start this before the cold request.  
 - Let it run through the warm request.  
 - Note min/max memory and any jumps between cold and warm.
+
+#### 3.1 Optional: Pinned-Memory & CMA Counters
+
+On some kernels, you can inspect CMA (contiguous memory allocator) stats:
+
+```bash
+grep -i cma /proc/meminfo || true
+```
+
+Capture this before starting vLLM and after the first cold request. Large changes can hint at how much contiguous memory is being reserved for pinned buffers.
 
 #### 4. Document First-Token Behavior
 

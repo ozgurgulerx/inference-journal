@@ -153,6 +153,36 @@ Create `days/day-007-vllm-slm/batching_benchmark.md`:
 
 ---
 
+### C. Concurrency vs Context Length & Tail Latency (Optional but High-Value)
+
+To connect KV scaling and batching to **real concurrency limits** and tail latency:
+
+1. For each `max-model-len` value you tested in `kv_scaling.sh`:
+
+   - Use a simple client (your `batch_client.py` or the Day 003 `vllm_chat_bench.py`) to gradually increase concurrency (e.g., 4 → 8 → 16 → 32 …).  
+   - Record when:
+     - GPU runs out of memory (OOM / server crash), **or**  
+     - p95/p99 latency becomes unacceptable for your target SLO.
+
+2. Capture results in a small table, e.g. `days/day-007-vllm-slm/concurrency_vs_context.md`:
+
+   ```markdown
+   | max-model-len | max_concurrency | p95_ms | p99_ms | OOM? | Notes |
+   |---------------|-----------------|--------|--------|------|-------|
+   | 2048          | 32              | 250    | 400    | no   | stable |
+   | 4096          | 16              | 320    | 600    | no   | tail growing |
+   | 8192          | 8               | 500    | 900    | yes  | OOM @ >8 |
+   ```
+
+3. If your client supports it, vary any **batch window / request grouping** knob (or simply the concurrency level) to see:
+
+   - When throughput gains from batching flatten out.  
+   - How batching changes p95/p99, not just p50.
+
+This step links the KV theory directly to **capacity planning**: it tells you, for each context length, how many users a single GPU can realistically support at your latency target.
+
+---
+
 ### Tier 3 Artifacts
 
 - `days/day-007-vllm-slm/kv_scaling.sh`  
