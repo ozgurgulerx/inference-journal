@@ -160,9 +160,14 @@ By the end of Day 006 you should **own** the following:
 
 - **[Tier 3 – KV Scaling & Micro-Batching](./LOG_tier03.md)**  
   `max-model-len` → KV cache footprint and continuous batching gains, even for SLMs.
-
-- **[Theory – Pages, Huge Pages, DMA & TTFT](./day06_theory.md)**  
-  Deeper dive into MMUs, THP vs explicit hugepages, IOMMU, and their impact on LLM serving.
+- **[Theory – Huge Pages & DMA](./theory/day06_theory_huge_pages.md)**  
+  MMUs, THP vs explicit hugepages, IOMMU, and their impact on LLM serving.
+- **[Theory – Allocators & vLLM Serving](./theory/day06_theory_malloc.md)**  
+  glibc vs jemalloc, RSS behavior, and allocator ownership for inference nodes.
+- **[Theory – SLMs as Probes](./theory/slms_as_probes.md)**  
+  Why 1–4B models are the best instruments for OS/runtime benchmarking and vLLM tuning.
+- **[Theory – KV Cache & PagedAttention](./theory/kv_cache.md)**  
+  How KV cache scales with context length, why naïve allocation wastes VRAM, and how PagedAttention changes capacity planning.
 
 ---
 
@@ -262,6 +267,10 @@ The labs in Day 006 lean on a few foundational ideas. These resources are useful
 
 - Any **“first-token latency in LLM serving”** doc (vLLM / TGI / similar)  
   → To tie cold/warm behavior to real SLOs (TTFT, warm pools, pre-warming strategies).
+
+For additional tuning ideas on cold vs warm behavior and page cache, see:
+
+- **[Caching, Cold vs Warm Loads & Tunables](./theory/caching_cold_warm_loads.md)** – practical knobs across storage, OS memory, and serving patterns.
 
 ---
 
