@@ -161,6 +161,9 @@ By the end of Day 006 you should **own** the following:
 - **[Tier 3 – KV Scaling & Micro-Batching](./LOG_tier03.md)**  
   `max-model-len` → KV cache footprint and continuous batching gains, even for SLMs.
 
+- **[Theory – Pages, Huge Pages, DMA & TTFT](./day06_theory.md)**  
+  Deeper dive into MMUs, THP vs explicit hugepages, IOMMU, and their impact on LLM serving.
+
 ---
 
 ## Cross-Day Context
