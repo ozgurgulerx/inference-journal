@@ -198,6 +198,8 @@ using an SLM as a **cheap, repeatable health probe**.
 
 The labs in Day 006 lean on a few foundational ideas. These resources are useful anchor points if you want to go deeper.
 
+![Memory Access: CPU vs GPU DMA Paths](../assets/cpu_gpu_transfer.png)
+
 ### Transparent Huge Pages (THP) & Huge Pages
 
 - **Concept**: Modern CPUs normally use 4KB pages; huge pages (e.g. 2MB on x86_64) reduce TLB pressure by mapping more memory per entry. Linux supports both **explicit hugepages** (HugeTLBfs) and **Transparent Huge Pages (THP)**, which automatically coalesces pages. THP can boost performance without code changes but may introduce latency or jitter for some workloads, which is why many latency-sensitive systems use `madvise` + explicit hugepages instead of `always`.
