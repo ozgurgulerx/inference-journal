@@ -40,7 +40,11 @@ CSV:
 
 Columns:
 
-- `max_model_len,gpu_mem_used_mb,notes`
+- `max_model_len,gpu_mem_used_mb,delta_mb_from_prev,bytes_per_token_est,notes`
+
+Tip:
+
+- Include a small baseline row (e.g. with the smallest `max-model-len` you test) so `delta_mb_from_prev` and `bytes_per_token_est` are easy to compute.
 
 #### 2) Interpret the curve
 
@@ -52,7 +56,12 @@ Answer:
 
 - Is it roughly linear?
 - Are there step changes? (allocation granularity)
+- Use the observed slope to back out an approximate **bytes per KV token**:
+  - e.g. `bytes_per_token_est ≈ (delta_mb * 1024 * 1024) / delta_max_model_len`.
 - Which `max-model-len` feels safe for this GPU *given you still want concurrency headroom*?
+- Sketch a “headroom envelope”:
+  - For this GPU, what `max-model-len` would you pick if you want ≈N concurrent 4K requests?
+  - What trade-offs would you make for a latency-focused vs throughput-focused service?
 
 ---
 
@@ -71,6 +80,8 @@ Requirements:
 - Print:
   - `sequential_s`
   - `concurrent_s`
+  - `sequential_qps` / `concurrent_qps`
+  - `sequential_tok_s` / `concurrent_tok_s` (if you can get token counts)
 
 If you already have a client from earlier days, reuse it, but keep a Day 007 copy so this day is self-contained.
 
@@ -87,7 +98,20 @@ Create:
 Include:
 
 - numbers (sequential vs concurrent)
+- a small table for a few concurrency levels:
+
+```text
+concurrency,mean_e2e_s,p95_e2e_s,qps,tok_s,gpu_util_pct,notes
+1,,,,,,
+4,,,,,,
+8,,,,,,
+16,,,,,,
+```
+
 - a short note on GPU utilization if you observed it (`nvidia-smi dmon`)
+- 3–5 bullets that capture your **“rules of thumb”**:
+  - e.g. “On this GPU + SLM, concurrency N–M is the sweet spot for 4K contexts.”
+  - “Beyond concurrency K, p95 blows up without meaningful throughput gains.”
 
 ---
 

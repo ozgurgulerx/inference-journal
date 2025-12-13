@@ -276,6 +276,33 @@ For additional tuning ideas on cold vs warm behavior and page cache, see:
 
 ---
 
+## Check Your Learning – Day 006 (20 Questions)
+
+Use these as a quick self‑quiz after you’ve run the experiments and filled in the logs.
+
+1. In your own words, why are **small language models (SLMs)** a good probe for OS and runtime behavior compared to jumping straight to a 70B model?
+2. What THP modes (`always`, `madvise`, `never`) are available on your system, and which one did you settle on for inference? Why?
+3. How would you explain the difference between **Transparent Hugepages** and **explicit hugepages** to a teammate who only knows “large pages make things faster”?
+4. Which exact commands do you use to inspect current THP and hugepage settings on your node?
+5. If you see large latency spikes during load or warm‑up, what’s one reason you might switch from `always` to `madvise` for THP?
+6. What is the role of the **page cache** during model load, and how did your **cold vs warm** SLM load time measurements demonstrate this?
+7. How would you design a quick experiment to verify that your model weights are actually benefiting from the page cache?
+8. In your measurements, roughly what factor separated cold vs warm SLM load times, and what does that suggest about your storage stack?
+9. What is the practical difference between running your SLM under **glibc malloc** vs **jemalloc** in terms of setup and expected behavior?
+10. In your allocator comparison, did you see a meaningful difference in **gen latency** or **RSS**? If so, what pattern emerged?
+11. When would you recommend to a team that they try swapping to jemalloc in production, and what metrics would you ask them to monitor?
+12. How do you define **first‑token latency (TTFT)** vs end‑to‑end latency in your experiments for Day 006?
+13. Which components do you believe dominate TTFT on your node (e.g. model load, graph/JIT warmup, KV allocations, network), and how did you infer that?
+14. What specific vLLM flags or environment conditions (from Day 006 + 007) can affect TTFT even for an SLM?
+15. How does increasing **`max-model-len`** change your KV cache memory footprint, and why can that reduce concurrency headroom even if you never hit the max length for most requests?
+16. If you observed KV scaling behavior on this GPU, what rough “bytes per token” estimate did you derive, and how might that change your configuration choices?
+17. How can continuous batching improve throughput for an SLM, and under what conditions might it hurt perceived latency?
+18. If you were handed a **mysterious new GPU node**, what 3–5 quick checks from Day 006 would you run to decide if it’s “safe” for serving LLM traffic?
+19. How would you explain to an SRE why THP, hugepages, and allocator choice are not just “tuning trivia” but directly affect latency SLOs?
+20. Looking back at your Day 006 + 007 combined logging template, what would you change or add if you had to run the same investigations on a different cloud provider?
+
+---
+
 ## Logging Template (For Day 006–007 Write-Up)
 
 Use this as a template in your log files once experiments are done:

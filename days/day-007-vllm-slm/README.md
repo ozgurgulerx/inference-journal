@@ -95,4 +95,56 @@ Use this as your end-of-day write-up.
 
 ---
 
+## Feynman / Consulting Deliverable
+
+At the end of the day, add a short section (2–4 paragraphs) to your notes that answers:
+
+- How you’d explain **TTFT, prefix caching, and KV scaling** to a non-ML infra lead.
+- Given your measurements, how you’d configure a **first-cut vLLM SLM service** on this node (model choice, `max-model-len`, concurrency targets).
+- What metrics/SLOs you’d track in a simple “health check” dashboard (TTFT, p95 latency, tok/s, GPU util, VRAM headroom).
+
+You can reuse this text directly in consulting or internal docs.
+
+---
+
+## Re-usable Checklist (New Node / New SLM)
+
+When you bring up vLLM on a new node or with a new SLM, reuse this quick checklist:
+
+- [ ] Record environment (GPU, OS/kernel, vLLM version, model).
+- [ ] Capture **cold vs warm TTFT** with a tiny probe (`first_token_latency.md`).
+- [ ] Run a minimal **prefix caching** experiment with a big shared prefix + variants (`prefix_caching_results.md`).
+- [ ] Run **KV scaling** for a few `max-model-len` values and compute an approximate bytes-per-token slope (`kv_cache_scaling.csv` + notes).
+- [ ] Run a small **micro-batching / concurrency** sweep and identify a sweet-spot concurrency range (`batching_benchmark.md`).
+- [ ] Write down 3–5 rules of thumb you’d reuse for this GPU + SLM in production.
+
+---
+
+## Check Your Learning – Day 007 (20 Questions)
+
+Use these questions to test whether you’ve internalized the runtime‑level behaviors from this day.
+
+1. How do you define **TTFT** in the context of vLLM, and how is it different from full end‑to‑end latency?
+2. In your `first_token_latency.md` measurements, what rough factor separated cold TTFT from warm TTFT, and what components do you think contributed most to the gap?
+3. If you see unexpectedly high warm TTFT, what are three things you would check first (flags, environment, or workload)?
+4. How does `max-model-len` affect TTFT and throughput indirectly, even when your actual prompts are much shorter than the maximum?
+5. How would you explain to an SRE why “TTFT vs throughput” is a trade‑off rather than two independent knobs?
+6. What is **prefix caching** in vLLM terms, and how is it different from just having a long static system prompt?
+7. Describe the repeated‑prefix workload you used in `prefix_prompts.jsonl`. Why did you choose that kind of prefix?
+8. For your prefix caching experiments, how did TTFT and tok/s change when you turned prefix caching on for a large prefix at moderate concurrency?
+9. What is the concept of **cache hit rate** for prefix caching, and how does mixed traffic (some cached, some not) change your expectations?
+10. Which production metrics would you monitor to confirm that prefix caching is actually delivering a benefit in a real system?
+11. Under what workload shapes would you **avoid** enabling prefix caching, or at least treat it with caution?
+12. How did you estimate **bytes per KV token** from `kv_cache_scaling.csv`, and what rough number did you arrive at for this SLM + GPU?
+13. Using that bytes‑per‑token estimate, how would you reason about a safe `max-model-len` if a product team asks for “room for 8 concurrent 4K‑token chats”?
+14. In your KV scaling notes, did the memory usage vs `max-model-len` curve look mostly linear, or did you observe step changes? What might cause those steps?
+15. How would you explain the phrase “`max-model-len` is a VRAM reservation decision” to a non‑ML infra lead?
+16. From your `batching_benchmark.md` results, what concurrency range looked like the **sweet spot** for your SLM and node, and why?
+17. At what concurrency did you see throughput flatten or p95/v99 latency blow up, and how would you communicate that “knee of the curve” to a product owner?
+18. How does continuous batching allow vLLM to increase tokens/sec without linearly increasing TTFT for each request?
+19. If you had to design a minimal “vLLM health check” dashboard based on Day 007, which 4–5 metrics would you include and what thresholds would worry you?
+20. Given your Day 007 experiments, what concrete configuration (model, `max-model-len`, concurrency target, prefix caching on/off) would you recommend as a **first-cut vLLM SLM service** for this node?
+
+---
+
 [← Day 006](../day-006-slm-memory/README.md) · [Days Index](../README.md)

@@ -18,6 +18,11 @@
 
 We need prompts that share a large prefix (chat history / system prompt / long policy text) and differ only in the final user question.
 
+Define **two prefix regimes** so you can see where prefix caching starts to pay off:
+
+- A “medium” prefix (~256–512 tokens).
+- A “large” prefix (~1K+ tokens).
+
 Create:
 
 - `days/day-007-vllm-slm/prefix_prompts.jsonl`
@@ -30,6 +35,10 @@ Keep:
 
 - Prefix length: target a few hundred to ~1K tokens worth of text (don’t overthink; just make it “obviously big”).
 - Variants: 20–50 questions.
+
+Optional, but useful:
+
+- Tag each JSON line with `prefix_len_tokens` (rough estimate) and a `workload` label (e.g. `"chat_policy"`, `"rag_prefix"`).
 
 ---
 
@@ -63,10 +72,13 @@ Requirements:
 - Run them in two modes:
   - sequential (easy baseline)
   - concurrent (more realistic; reuses Day 003 mental model)
-- Output a simple CSV line or JSON summary:
-  - mean wall time
-  - p95 wall time (rough; ok if approximate)
-  - total tokens (if available)
+- For each run, capture:
+  - `ttft_proxy_s` (start → first token or response receive)
+  - `e2e_s` (start → completion done)
+  - `prompt_tokens`, `completion_tokens` (if available)
+- Output per-request stats (CSV/JSON), plus a small aggregate summary:
+  - mean and p95 wall time (rough is fine)
+  - total tokens and tokens/sec
 
 Keep it short.
 
@@ -82,14 +94,16 @@ Include:
 
 - The exact shared-prefix strategy you used (what kind of prefix? how large?).
 - The two server commands (prefix cache off/on).
-- A table:
+- A summary table per `(prefix_length, concurrency)` pair:
 
 ```text
-mode,concurrency,mean_wall_s,p95_wall_s,notes
-no_prefix_cache,1,...,...,
-no_prefix_cache,16,...,...,
-with_prefix_cache,1,...,...,
-with_prefix_cache,16,...,...,
+mode,prefix_len_tokens,concurrency,mean_ttft_s,mean_e2e_s,p95_e2e_s,tok_s,notes
+no_prefix_cache,512,1,...,...,...,...,
+no_prefix_cache,512,16,...,...,...,...,
+with_prefix_cache,512,1,...,...,...,...,
+with_prefix_cache,512,16,...,...,...,...,
+no_prefix_cache,1024,1,...,...,...,...,
+with_prefix_cache,1024,16,...,...,...,...,
 ```
 
 Interpretation prompts:
@@ -98,6 +112,12 @@ Interpretation prompts:
 - Did it increase throughput at the same p95?
 - Did you observe any extra memory overhead?
 - What workload shapes benefit most? (chat history, RAG with fixed system prompt, tool policies)
+- How does the benefit change as `prefix_len_tokens` grows?
+
+Add a short **“Hit rate mental model”** section:
+
+- What effective cache hit rate did you test? (e.g. 100% reuse vs 50% reuse).
+- How would mixed traffic (some cached, some not) change the benefit?
 
 ---
 
@@ -108,6 +128,7 @@ Add 3–5 bullets at the bottom of `prefix_caching_results.md`:
 - When I would enable prefix caching.
 - How I would detect if it is working (metrics to watch).
 - One failure mode / caveat.
+- How I’d explain prefix caching to a product/SRE audience in 1–2 sentences.
 
 ---
 
