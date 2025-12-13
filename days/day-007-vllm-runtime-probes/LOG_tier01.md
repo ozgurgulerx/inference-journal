@@ -242,6 +242,25 @@ Use this section to **interpret** your numbers, not just restate them. Concretel
   - Call out any runs that were clearly slower/faster and tie them to observations: GPU util dip, other processes, clock changes, etc.  
   - Example: “Run 4 was 2× slower; `nvidia-smi dmon` showed another process briefly hitting the GPU, so I’d ignore that as noise, not a config issue.”
 
+Cold-start stack note (page cache vs HBM):
+
+**Page cache** vs **HBM load**:
+
+Yes — that’s the right mental model, with two tweaks:
+
+1. **Page cache** = *storage → CPU RAM* (kernel keeps file pages cached).
+2. **HBM load** = *CPU RAM → GPU HBM* (CUDA/runtime does allocations + copies over PCIe/NVLink).
+
+Two nuances that matter in practice:
+
+- **They overlap sometimes**: frameworks can stream + prefetch, so disk reads and HBM copies can pipeline, but cold start still “feels” like two bumps.
+- **Not always a full second bump**: if weights are **mmap’d** and copied lazily, or if you’re using **pinned memory**, or if the runtime does staging/quantization on CPU, the shape changes. But the two-layer idea holds.
+
+A cheap diagnostic you’ll like:
+
+- If during `cold_1` you see **high disk reads**, **Cached/buffers rising**, and **GPU util low early** → page cache fill dominated.
+- If you see **GPU memory jump** + **PCIe TX/RX high** (or NVLink) → HBM transfer/alloc dominated.
+
 ## How I’d explain TTFT to an SRE
 - What TTFT represents in user experience terms.
 - Why cold vs warm matter for incident/debugging.
