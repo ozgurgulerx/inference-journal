@@ -27,6 +27,66 @@ Assumptions:
 
 ---
 
+## Status (Completeness / Integrity)
+
+This folder now contains both:
+
+- the **templates / write-up shells** for the day, and
+- the **runnable scripts** needed to execute Tier 1–3.
+
+Present in repo:
+
+- `first_token_latency.md`
+- `prefix_caching_results.md`
+- `kv_cache_scaling_notes.md`
+- `batching_benchmark.md`
+
+- Tier 1 scripts: `serve_slm_vllm.sh`, `ttft_probe.py`
+- Tier 2 scripts/data: `prefix_prompts.jsonl`, `serve_slm_no_prefix_cache.sh`, `serve_slm_prefix_cache.sh`, `prefix_cache_bench.py`
+- Tier 3 scripts: `kv_scaling.sh`, `batch_client.py`
+
+Expected to be created when running the day:
+
+- `kv_cache_scaling.csv` (produced by running `kv_scaling.sh`)
+- (optional) `concurrency_sweep.csv` (produced by running `batch_client.py --sweep --out concurrency_sweep.csv`)
+
+If you want Day 007 to be “self-contained” in the repository, the cleanest approach is:
+
+- Run the experiments and commit the resulting CSVs/logs alongside the filled-in markdown.
+
+---
+
+## Required Learning (Must-Learn)
+
+These are the references that make Day 007 “deep” (not just a checklist). They are intentionally mapped to Tier 1/2/3.
+
+### Tier 1 (TTFT / cold vs warm)
+
+- **vLLM paper (PagedAttention)**
+  - https://arxiv.org/abs/2309.06180
+  - Focus: KV cache as the bottleneck, why batching is hard, and why memory management dominates throughput.
+- **Queueing / tail-latency intuition (why p95 blows up near saturation)**
+  - The Tail at Scale (Google): https://research.google/pubs/the-tail-at-scale/
+
+### Tier 2 (Prefix caching / prefix reuse)
+
+- **vLLM docs: Automatic Prefix Caching (APC)**
+  - https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/
+- **vLLM docs: Prefix caching design**
+  - https://docs.vllm.ai/en/latest/design/prefix_caching/
+- **YouTube (conceptual, high signal)**
+  - vLLM / PagedAttention talk (one good entry): https://www.youtube.com/watch?v=Oq2SN7uutbQ
+
+### Tier 3 (KV scaling + continuous batching)
+
+- **FlashAttention background (why attention is an IO/memory problem)**
+  - FlashAttention-2: https://arxiv.org/abs/2307.08691
+  - (Optional precursor) FlashAttention: https://arxiv.org/abs/2205.14135
+- **YouTube (batching intuition)**
+  - Gentle intro to static/dynamic/continuous batching: https://www.youtube.com/watch?v=yjvMtJNecec
+
+---
+
 ## Tier Breakdown
 
 | Tier  | Time        | Scope |

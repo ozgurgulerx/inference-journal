@@ -25,7 +25,7 @@ Define **two prefix regimes** so you can see where prefix caching starts to pay 
 
 Create:
 
-- `days/day-007-vllm-slm/prefix_prompts.jsonl`
+- `days/day-007-vllm-runtime-probes/prefix_prompts.jsonl`
 
 Structure (one JSON per line):
 
@@ -56,14 +56,14 @@ You want two server configs that differ only in prefix caching.
 
 Create two launcher scripts:
 
-- `days/day-007-vllm-slm/serve_slm_no_prefix_cache.sh`
-- `days/day-007-vllm-slm/serve_slm_prefix_cache.sh`
+- `days/day-007-vllm-runtime-probes/serve_slm_no_prefix_cache.sh`
+- `days/day-007-vllm-runtime-probes/serve_slm_prefix_cache.sh`
 
 Example (adapt flags/version as needed):
 
 ```bash
 #!/usr/bin/env bash
-# days/day-007-vllm-slm/serve_slm_no_prefix_cache.sh
+# days/day-007-vllm-runtime-probes/serve_slm_no_prefix_cache.sh
 set -euo pipefail
 
 MODEL="microsoft/Phi-3-mini-4k-instruct"
@@ -79,7 +79,7 @@ python -m vllm.entrypoints.openai.api_server \
 
 ```bash
 #!/usr/bin/env bash
-# days/day-007-vllm-slm/serve_slm_prefix_cache.sh
+# days/day-007-vllm-runtime-probes/serve_slm_prefix_cache.sh
 set -euo pipefail
 
 MODEL="microsoft/Phi-3-mini-4k-instruct"
@@ -107,7 +107,7 @@ Rules:
 
 Create:
 
-- `days/day-007-vllm-slm/prefix_cache_bench.py`
+- `days/day-007-vllm-runtime-probes/prefix_cache_bench.py`
 
 Requirements:
 
@@ -138,6 +138,7 @@ from typing import List
 
 import requests
 
+MODEL = "microsoft/Phi-3-mini-4k-instruct"
 
 def load_prompts(path: Path) -> List[str]:
     prompts = []
@@ -151,7 +152,7 @@ def load_prompts(path: Path) -> List[str]:
 
 
 def call_completion(url: str, prompt: str, max_tokens: int = 64) -> float:
-    payload = {"prompt": prompt, "max_tokens": max_tokens, "temperature": 0.0}
+    payload = {"model": MODEL, "prompt": prompt, "max_tokens": max_tokens, "temperature": 0.0}
     t0 = time.time()
     resp = requests.post(url, json=payload, timeout=60)
     t1 = time.time()
@@ -188,7 +189,7 @@ if __name__ == "__main__":
 
 Create:
 
-- `days/day-007-vllm-slm/prefix_caching_results.md`
+- `days/day-007-vllm-runtime-probes/prefix_caching_results.md`
 
 Include:
 
@@ -298,11 +299,11 @@ Expectations for this section:
 
 ## Expected Artifact
 
-- `days/day-007-vllm-slm/prefix_prompts.jsonl`
-- `days/day-007-vllm-slm/serve_slm_no_prefix_cache.sh`
-- `days/day-007-vllm-slm/serve_slm_prefix_cache.sh`
-- `days/day-007-vllm-slm/prefix_cache_bench.py`
-- `days/day-007-vllm-slm/prefix_caching_results.md`
+- `days/day-007-vllm-runtime-probes/prefix_prompts.jsonl`
+- `days/day-007-vllm-runtime-probes/serve_slm_no_prefix_cache.sh`
+- `days/day-007-vllm-runtime-probes/serve_slm_prefix_cache.sh`
+- `days/day-007-vllm-runtime-probes/prefix_cache_bench.py`
+- `days/day-007-vllm-runtime-probes/prefix_caching_results.md`
 
 ---
 

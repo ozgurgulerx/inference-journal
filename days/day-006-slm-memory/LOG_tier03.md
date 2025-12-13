@@ -23,7 +23,7 @@
 
 #### 1. Automate Runs over Multiple `max-model-len` Values
 
-In `days/day-007-vllm-slm/kv_scaling.sh`:
+In `days/day-007-vllm-runtime-probes/kv_scaling.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -52,7 +52,7 @@ done
 Make it executable and run:
 
 ```bash
-cd days/day-007-vllm-slm
+cd days/day-007-vllm-runtime-probes
 chmod +x kv_scaling.sh
 ./kv_scaling.sh
 ```
@@ -67,7 +67,7 @@ Look for:
 
 #### 3. Add Commentary
 
-Create `days/day-007-vllm-slm/kv_cache_scaling_notes.md` (5–10 lines) answering:
+Create `days/day-007-vllm-runtime-probes/kv_cache_scaling_notes.md` (5–10 lines) answering:
 
 - How memory scales with `max-model-len` on this GPU (does it match the expectations from `theory/kv_cache.md`?).  
 - How much headroom remains for additional sequences / batching at each length.  
@@ -79,7 +79,7 @@ Create `days/day-007-vllm-slm/kv_cache_scaling_notes.md` (5–10 lines) answerin
 
 #### 1. Create a Tiny Batch Client
 
-`days/day-007-vllm-slm/batch_client.py` (aim for ≤20–25 lines):
+`days/day-007-vllm-runtime-probes/batch_client.py` (aim for ≤20–25 lines):
 
 ```python
 import asyncio, time, aiohttp
@@ -129,7 +129,7 @@ if __name__ == "__main__":
 With the vLLM server (using the same SLM config) running:
 
 ```bash
-cd days/day-007-vllm-slm
+cd days/day-007-vllm-runtime-probes
 python batch_client.py
 ```
 
@@ -145,7 +145,7 @@ Watch for utilization differences between sequential and concurrent modes.
 
 #### 4. Write a Short Summary
 
-Create `days/day-007-vllm-slm/batching_benchmark.md`:
+Create `days/day-007-vllm-runtime-probes/batching_benchmark.md`:
 
 - Numerical results: `sequential_s`, `concurrent_s`, rough tokens/sec for each.  
 - A brief note on how much continuous batching helped even with an SLM.  
@@ -164,7 +164,7 @@ To connect KV scaling and batching to **real concurrency limits** and tail laten
      - GPU runs out of memory (OOM / server crash), **or**  
      - p95/p99 latency becomes unacceptable for your target SLO.
 
-2. Capture results in a small table, e.g. `days/day-007-vllm-slm/concurrency_vs_context.md`:
+2. Capture results in a small table, e.g. `days/day-007-vllm-runtime-probes/concurrency_vs_context.md`:
 
    ```markdown
    | max-model-len | max_concurrency | p95_ms | p99_ms | OOM? | Notes |
@@ -185,8 +185,8 @@ This step links the KV theory directly to **capacity planning**: it tells you, f
 
 ### Tier 3 Artifacts
 
-- `days/day-007-vllm-slm/kv_scaling.sh`  
-- `days/day-007-vllm-slm/kv_cache_scaling.csv`  
-- `days/day-007-vllm-slm/kv_cache_scaling_notes.md`  
-- `days/day-007-vllm-slm/batch_client.py`  
-- `days/day-007-vllm-slm/batching_benchmark.md`
+- `days/day-007-vllm-runtime-probes/kv_scaling.sh`  
+- `days/day-007-vllm-runtime-probes/kv_cache_scaling.csv`  
+- `days/day-007-vllm-runtime-probes/kv_cache_scaling_notes.md`  
+- `days/day-007-vllm-runtime-probes/batch_client.py`  
+- `days/day-007-vllm-runtime-probes/batching_benchmark.md`

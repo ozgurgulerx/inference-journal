@@ -330,12 +330,12 @@ Use this as a template in your log files once experiments are done:
 - days/day-006-slm-memory/slm_gen_latency.py
 - days/day-006-slm-memory/README.md
 - days/day-006-slm-memory/allocator_latency_comparison.csv
-- days/day-007-vllm-slm/first_token_latency.md
-- days/day-007-vllm-slm/kv_scaling.sh
-- days/day-007-vllm-slm/kv_cache_scaling.csv
-- days/day-007-vllm-slm/kv_cache_scaling_notes.md
-- days/day-007-vllm-slm/batch_client.py
-- days/day-007-vllm-slm/batching_benchmark.md
+- days/day-007-vllm-runtime-probes/first_token_latency.md
+- days/day-007-vllm-runtime-probes/kv_scaling.sh
+- days/day-007-vllm-runtime-probes/kv_cache_scaling.csv
+- days/day-007-vllm-runtime-probes/kv_cache_scaling_notes.md
+- days/day-007-vllm-runtime-probes/batch_client.py
+- days/day-007-vllm-runtime-probes/batching_benchmark.md
 
 ## Key Numbers / Metrics
 - cold vs warm HF load times

@@ -30,7 +30,7 @@ Throughout this 100-day journey I’m also using **NotebookLM** and **OpenAI Dee
 | [004](day-004-quantization-vs-bf16/) | Dec 4 | Quantization vs BF16 | ⏳ |
 | [005](day-005-OS-and-NUMA-node-hardening/) | Dec 5 | OS & NUMA Node Hardening | ⏳ |
 | [006](day-006-slm-memory/) | Dec 6–7 | SLM + OS Memory & vLLM | ⏳ |
-| [007](day-007-vllm-slm/) | Dec 8 | vLLM SLM: TTFT, Prefix Caching, KV Scaling | ⏳ |
+| [007](day-007-vllm-runtime-probes/) | Dec 8 | vLLM SLM: TTFT, Prefix Caching, KV Scaling | ⏳ |
 | ... | | | |
 
 ---

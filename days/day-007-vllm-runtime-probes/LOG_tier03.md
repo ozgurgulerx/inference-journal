@@ -22,7 +22,7 @@
 
 Create:
 
-- `days/day-007-vllm-slm/kv_scaling.sh`
+- `days/day-007-vllm-runtime-probes/kv_scaling.sh`
 
 Requirements:
 
@@ -36,7 +36,7 @@ Requirements:
 
 CSV:
 
-- `days/day-007-vllm-slm/kv_cache_scaling.csv`
+- `days/day-007-vllm-runtime-probes/kv_cache_scaling.csv`
 
 Columns:
 
@@ -103,7 +103,7 @@ Tip:
 
 Create:
 
-- `days/day-007-vllm-slm/kv_cache_scaling_notes.md`
+- `days/day-007-vllm-runtime-probes/kv_cache_scaling_notes.md`
 
 Answer:
 
@@ -144,7 +144,7 @@ What’s expected here (and why):
 
 Create:
 
-- `days/day-007-vllm-slm/batch_client.py`
+- `days/day-007-vllm-runtime-probes/batch_client.py`
 
 Requirements:
 
@@ -171,8 +171,11 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 
 
+MODEL = "microsoft/Phi-3-mini-4k-instruct"
+
+
 def call_once(url: str, prompt: str, max_tokens: int) -> int:
-  payload = {"prompt": prompt, "max_tokens": max_tokens, "temperature": 0.0}
+  payload = {"model": MODEL, "prompt": prompt, "max_tokens": max_tokens, "temperature": 0.0}
   resp = requests.post(url, json=payload, timeout=60)
   resp.raise_for_status()
   data = resp.json()
@@ -237,7 +240,7 @@ if __name__ == "__main__":
 
 Create:
 
-- `days/day-007-vllm-slm/batching_benchmark.md`
+- `days/day-007-vllm-runtime-probes/batching_benchmark.md`
 
 Include:
 
@@ -292,7 +295,7 @@ If time permits, extend `batch_client.py` to sweep concurrency levels:
 
 Write results into:
 
-- `days/day-007-vllm-slm/concurrency_sweep.csv`
+- `days/day-007-vllm-runtime-probes/concurrency_sweep.csv`
 
 Key insight to capture:
 
@@ -330,12 +333,12 @@ What’s expected here (and why):
 
 ## Expected Artifact
 
-- `days/day-007-vllm-slm/kv_scaling.sh`
-- `days/day-007-vllm-slm/kv_cache_scaling.csv`
-- `days/day-007-vllm-slm/kv_cache_scaling_notes.md`
-- `days/day-007-vllm-slm/batch_client.py`
-- `days/day-007-vllm-slm/batching_benchmark.md`
-- (optional) `days/day-007-vllm-slm/concurrency_sweep.csv`
+- `days/day-007-vllm-runtime-probes/kv_scaling.sh`
+- `days/day-007-vllm-runtime-probes/kv_cache_scaling.csv`
+- `days/day-007-vllm-runtime-probes/kv_cache_scaling_notes.md`
+- `days/day-007-vllm-runtime-probes/batch_client.py`
+- `days/day-007-vllm-runtime-probes/batching_benchmark.md`
+- (optional) `days/day-007-vllm-runtime-probes/concurrency_sweep.csv`
 
 ---
 

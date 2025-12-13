@@ -115,8 +115,8 @@ Add 3–5 bullets in `README.md` summarizing whether jemalloc helped (and by how
 From repo root or a new folder:
 
 ```bash
-mkdir -p days/day-007-vllm-slm
-cd days/day-007-vllm-slm
+mkdir -p days/day-007-vllm-runtime-probes
+cd days/day-007-vllm-runtime-probes
 
 python -m vllm.entrypoints.openai.api_server \
     --model microsoft/Phi-3-mini-4k-instruct \
@@ -165,7 +165,7 @@ Record both wall times and, if possible, approximate **TTFT** (time-to-first-tok
 
 #### 2.1 Optional: Separate First-Token vs End-to-End Latency
 
-To explicitly split TTFT from full response time, create `days/day-007-vllm-slm/ft_latency_client.py`:
+To explicitly split TTFT from full response time, create `days/day-007-vllm-runtime-probes/ft_latency_client.py`:
 
 ```python
 import time, requests
@@ -208,7 +208,7 @@ if __name__ == "__main__":
 Run this while vLLM is up:
 
 ```bash
-cd days/day-007-vllm-slm
+cd days/day-007-vllm-runtime-probes
 python ft_latency_client.py
 ```
 
@@ -236,7 +236,7 @@ Capture this before starting vLLM and after the first cold request. Large change
 
 #### 4. Document First-Token Behavior
 
-Create `days/day-007-vllm-slm/first_token_latency.md` with:
+Create `days/day-007-vllm-runtime-probes/first_token_latency.md` with:
 
 - Cold vs warm wall times (`cold_req_real_s`, `warm_req_real_s`).  
 - Any clear drop from first to second request.  
@@ -249,4 +249,4 @@ Create `days/day-007-vllm-slm/first_token_latency.md` with:
 
 - `days/day-006-slm-memory/slm_gen_latency.py`  
 - `days/day-006-slm-memory/allocator_latency_comparison.csv`  
-- `days/day-007-vllm-slm/first_token_latency.md`
+- `days/day-007-vllm-runtime-probes/first_token_latency.md`

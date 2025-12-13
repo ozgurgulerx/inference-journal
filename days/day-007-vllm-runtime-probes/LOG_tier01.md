@@ -29,7 +29,7 @@ Record it at the top of your notes (and reuse the same `MODEL` in every script).
 
 Create a small launcher script:
 
-- `days/day-007-vllm-slm/serve_slm_vllm.sh`
+- `days/day-007-vllm-runtime-probes/serve_slm_vllm.sh`
 
 Command skeleton (keep it minimal; you can refine later):
 
@@ -51,8 +51,8 @@ python -m vllm.entrypoints.openai.api_server \
 Start the server:
 
 ```bash
-chmod +x days/day-007-vllm-slm/serve_slm_vllm.sh
-./days/day-007-vllm-slm/serve_slm_vllm.sh
+chmod +x days/day-007-vllm-runtime-probes/serve_slm_vllm.sh
+./days/day-007-vllm-runtime-probes/serve_slm_vllm.sh
 ```
 
 **Log**: paste the exact command/flags into `first_token_latency.md`.
@@ -63,7 +63,7 @@ chmod +x days/day-007-vllm-slm/serve_slm_vllm.sh
 
 Create:
 
-- `days/day-007-vllm-slm/ttft_probe.py`
+- `days/day-007-vllm-runtime-probes/ttft_probe.py`
 
 Requirements:
 
@@ -95,11 +95,13 @@ import requests
 
 
 URL = "http://127.0.0.1:8000/v1/completions"
+MODEL = "microsoft/Phi-3-mini-4k-instruct"
 PROMPT = "Say hello from a small language model."
 
 
 def main() -> None:
     payload = {
+        "model": MODEL,
         "prompt": PROMPT,
         "max_tokens": 64,
         "temperature": 0.0,
@@ -151,7 +153,7 @@ Record at least:
 
 Create:
 
-- `days/day-007-vllm-slm/first_token_latency.md`
+- `days/day-007-vllm-runtime-probes/first_token_latency.md`
 
 Template:
 
@@ -290,9 +292,9 @@ Example note you could write (adapt numbers to your case):
 
 ## Expected Artifact
 
-- `days/day-007-vllm-slm/serve_slm_vllm.sh`
-- `days/day-007-vllm-slm/ttft_probe.py`
-- `days/day-007-vllm-slm/first_token_latency.md`
+- `days/day-007-vllm-runtime-probes/serve_slm_vllm.sh`
+- `days/day-007-vllm-runtime-probes/ttft_probe.py`
+- `days/day-007-vllm-runtime-probes/first_token_latency.md`
 
 ---
 
