@@ -31,6 +31,14 @@ Structure (one JSON per line):
 
 - `{"prompt": "<BIG_SHARED_PREFIX>\nQ: <variant>\nA:"}`
 
+Example (JSONL):
+
+```json
+{"prompt": "<BIG_SHARED_PREFIX>\nQ: How do I reset my password?\nA:"}
+{"prompt": "<BIG_SHARED_PREFIX>\nQ: How do I export my account data?\nA:"}
+{"prompt": "<BIG_SHARED_PREFIX>\nQ: How can I change my notification settings?\nA:"}
+```
+
 Keep:
 
 - Prefix length: target a few hundred to ~1K tokens worth of text (don’t overthink; just make it “obviously big”).
@@ -50,6 +58,41 @@ Create two launcher scripts:
 
 - `days/day-007-vllm-slm/serve_slm_no_prefix_cache.sh`
 - `days/day-007-vllm-slm/serve_slm_prefix_cache.sh`
+
+Example (adapt flags/version as needed):
+
+```bash
+#!/usr/bin/env bash
+# days/day-007-vllm-slm/serve_slm_no_prefix_cache.sh
+set -euo pipefail
+
+MODEL="microsoft/Phi-3-mini-4k-instruct"
+PORT=8000
+
+python -m vllm.entrypoints.openai.api_server \
+  --model "$MODEL" \
+  --dtype auto \
+  --max-model-len 4096 \
+  --gpu-memory-utilization 0.90 \
+  --port "$PORT"
+```
+
+```bash
+#!/usr/bin/env bash
+# days/day-007-vllm-slm/serve_slm_prefix_cache.sh
+set -euo pipefail
+
+MODEL="microsoft/Phi-3-mini-4k-instruct"
+PORT=8000
+
+python -m vllm.entrypoints.openai.api_server \
+  --model "$MODEL" \
+  --dtype auto \
+  --max-model-len 4096 \
+  --gpu-memory-utilization 0.90 \
+  --port "$PORT" \
+  --enable-prefix-caching  # flag name may differ by vLLM version; check --help
+```
 
 Implementation detail: vLLM has a flag for this; if the exact flag name differs by version, rely on `--help` output for your installed vLLM.
 
@@ -81,6 +124,63 @@ Requirements:
   - total tokens and tokens/sec
 
 Keep it short.
+
+Example skeleton:
+
+```python
+#!/usr/bin/env python3
+import argparse
+import json
+import statistics
+import time
+from pathlib import Path
+from typing import List
+
+import requests
+
+
+def load_prompts(path: Path) -> List[str]:
+    prompts = []
+    with path.open() as f:
+        for line in f:
+            if not line.strip():
+                continue
+            obj = json.loads(line)
+            prompts.append(obj["prompt"])
+    return prompts
+
+
+def call_completion(url: str, prompt: str, max_tokens: int = 64) -> float:
+    payload = {"prompt": prompt, "max_tokens": max_tokens, "temperature": 0.0}
+    t0 = time.time()
+    resp = requests.post(url, json=payload, timeout=60)
+    t1 = time.time()
+    resp.raise_for_status()
+    _ = resp.json()
+    return t1 - t0
+
+
+def run_sequential(url: str, prompts: List[str]) -> List[float]:
+    return [call_completion(url, p) for p in prompts]
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--url", default="http://127.0.0.1:8000/v1/completions")
+    parser.add_argument("--prompts", default="prefix_prompts.jsonl")
+    args = parser.parse_args()
+
+    prompts = load_prompts(Path(args.prompts))
+    times = run_sequential(args.url, prompts)
+
+    mean_wall = statistics.mean(times)
+    p95_wall = statistics.quantiles(times, n=20)[-1]
+    print(json.dumps({"mode": "sequential", "mean_wall_s": mean_wall, "p95_wall_s": p95_wall}))
+
+
+if __name__ == "__main__":
+    main()
+```
 
 ---
 

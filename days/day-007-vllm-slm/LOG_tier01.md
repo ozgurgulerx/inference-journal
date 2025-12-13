@@ -84,6 +84,51 @@ Suggested request payload (keep constant):
 - `temperature`: 0
 - prompt: a short single-turn prompt
 
+Example skeleton:
+
+```python
+#!/usr/bin/env python3
+import json
+import time
+
+import requests
+
+
+URL = "http://127.0.0.1:8000/v1/completions"
+PROMPT = "Say hello from a small language model."
+
+
+def main() -> None:
+    payload = {
+        "prompt": PROMPT,
+        "max_tokens": 64,
+        "temperature": 0.0,
+    }
+
+    t0 = time.time()
+    resp = requests.post(URL, json=payload, timeout=30)
+    t1 = time.time()
+
+    resp.raise_for_status()
+    data = resp.json()
+    text = data["choices"][0].get("text", "").strip()
+    total_tokens = data.get("usage", {}).get("total_tokens")
+
+    print(
+        json.dumps(
+            {
+                "wall_s": t1 - t0,
+                "total_tokens": total_tokens,
+                "output_preview": text[:80],
+            }
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()
+```
+
 ---
 
 ### 3) Measure cold vs warm request latency (TTFT proxy)
