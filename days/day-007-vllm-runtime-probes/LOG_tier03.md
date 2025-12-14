@@ -1,11 +1,63 @@
-# Day 007 – vLLM SLM: TTFT, Prefix Caching, KV Scaling
+# Day 007 – vLLM Runtime Probes
 ## Tier 3 – KV Scaling + Micro-Batching Under Load (Capacity Intuition)
 
-> **Goal**:
-> - Empirically connect `max-model-len` to VRAM usage (KV cache capacity commitment).
-> - Quantify the throughput difference between sequential vs concurrent load.
+Ozgur — **Day 07 / Tier 03** is about turning vLLM from “it works” into **capacity math you can defend**.
+
+### One-liner (Intent)
+
+**Tier 3 intends to empirically map memory + concurrency → throughput + latency, so you can choose a safe operating point for an SLM on a specific GPU.**
+
+### What Tier 3 actually does (in systems terms)
+
+Tier 3 answers **two operator questions**:
+
+1. **What does `max-model-len` really cost me in VRAM?**  
+   - Treat `max-model-len` not as a feature limit, but as a **worst-case KV memory reservation per active sequence**.  
+   - Measure how **KV cache footprint scales with context length**, and estimate an approximate **bytes-per-token slope** for KV.  
+   - Outcome: you can say, “Each extra token of max context costs ~X bytes of VRAM per sequence,” which is the foundation for capacity planning.
+
+2. **How much concurrency do I need before batching actually pays off?**  
+   - With a fixed server config, sweep concurrency and compare **sequential vs concurrent** load.  
+   - Observe QPS, tokens/sec, mean vs p95 latency, and GPU utilization.  
+   - Outcome: you find the **knee of the curve** where throughput saturates and p95 explodes, and can say, “Concurrency N–M is the sweet spot; beyond that we mostly buy queueing delay.”
+
+### What Tier 3 is *not*
+
+- ❌ Not model quality work  
+- ❌ Not prefix caching (that’s Tier 2)  
+- ❌ Not GPU kernel optimization  
+- ❌ Not vendor-style tok/s bragging
+
+Tier 3 is about **operating envelopes** — making **SRE-grade inference decisions** rather than just proving vLLM is fast.
+
+### Mental model Tier 3 should teach you
+
+Tier 3 forces you to internalize three coupled constraints:
+
+```text
+KV memory commitment
+        ↓
+max-model-len × concurrency
+        ↓
+batch size → GPU utilization
+        ↓
+throughput ↔ p95 latency trade-off
+```
+
+After Tier 3, you should be able to say — *without hand-waving*:
+
+> “On this GPU, with this SLM, for interactive traffic, the safe config is: `max-model-len = 4K`, concurrency = 8–12, p95 ≈ X ms, tok/s ≈ Y.”
+
+That’s the gap between **demo engineer** and **inference operator**.
+
+---
+
+> **Goal**  
+> - Empirically connect `max-model-len` to VRAM usage (KV cache capacity commitment).  
+> - Quantify the throughput difference between sequential vs concurrent load.  
 >
-> **Outcome**: A small KV scaling CSV + a batching benchmark note with numbers.
+> **Outcome**  
+> - A small KV scaling CSV + a batching benchmark note with numbers that let you pick safe operating points.
 
 ---
 
@@ -99,6 +151,40 @@ Tip:
 
 - Include a small baseline row (e.g. with the smallest `max-model-len` you test) so `delta_mb_from_prev` and `bytes_per_token_est` are easy to compute.
 
+#### 1b) Measured vs Theoretical KV Footprint (Structural View)
+
+Don’t just treat `bytes_per_token_est` as a magic slope — tie it back to model structure.
+
+Theoretical KV bytes per token for a transformer is approximately:
+
+```text
+KV_bytes_per_token_theory ≈ 2 (K + V)
+                          × n_layers
+                          × n_heads
+                          × head_dim
+                          × dtype_bytes
+```
+
+Where:
+
+- `2` accounts for both K and V,  
+- `n_layers` is the number of transformer layers,  
+- `n_heads` is attention heads per layer,  
+- `head_dim` is the dimension per head,  
+- `dtype_bytes` is bytes per element (e.g. 2 for fp16/bf16, 1 for many quantized KV layouts).
+
+Use this to:
+
+- compute a **theoretical KV slope** for your SLM,  
+- compare it to your **measured `bytes_per_token_est`**,  
+- explain any deltas in `kv_cache_scaling_notes.md`:
+  - allocator rounding / page size,  
+  - PagedAttention block packing,  
+  - extra per-sequence metadata or fragmentation,  
+  - any runtime buffers that scale with length.
+
+This elevates your CSV from “numbers” to **model-aware capacity math**.
+
 #### 2) Interpret the curve
 
 Create:
@@ -122,6 +208,17 @@ What’s expected here (and why):
   - Plot or mentally compare `gpu_mem_used_mb` vs `max_model_len`. If increases are roughly proportional (similar `delta_mb` per `delta_max_model_len`), the relationship is close to linear, which matches the theory that KV memory is ~O(sequence_length).  
   - If you see **step changes** (e.g. jumps at certain lengths), that hints at allocation granularity: the runtime may reserve KV in chunks (pages/blocks), so memory usage grows in “stairs” rather than a perfect line. Calling this out tells you how “smooth” your capacity trade‑off really is.
 
+- **PagedAttention internals & fragmentation**  
+  - In vLLM, KV is typically managed by a **PagedAttention allocator** that carves KV into fixed-size pages/blocks.  
+  - Page size and allocation strategy determine:
+    - how big each “stair step” is in your memory curve,  
+    - how much **internal fragmentation** you pay (unused space inside pages),  
+    - how efficiently KV can be reused across sequences.  
+  - When your notes mention stairs or non-linearities, explicitly attribute them to:
+    - page size,  
+    - per-sequence metadata,  
+    - rounding up to whole pages rather than exact token counts.
+
 - **Bytes per KV token (slope) and why you care**  
   - The slope `bytes_per_token_est` turns your CSV into a usable rule of thumb: “Each extra token of `max-model-len` costs ~X bytes of VRAM per active sequence.”  
   - This matters because it lets you quickly evaluate product asks: if someone wants to double context length, you can estimate how many GiB that will cost across your typical concurrency and whether your GPUs can handle it.
@@ -135,6 +232,62 @@ What’s expected here (and why):
     - Latency‑focused service: pick a **smaller `max-model-len`** (e.g. 4K), keep concurrency modest, prioritize keeping p95 low and avoiding OOM.  
     - Throughput‑focused service: accept either a larger `max-model-len` with lower concurrency, or keep `max-model-len` smaller but push concurrency higher, as long as p95 is acceptable.  
   - Writing this out forces you to reason like an SRE: not just “what’s technically possible,” but “what’s safe and aligned with the SLO for this GPU + SLM.”
+
+#### 3) Reserved vs Active KV (Conceptual Split)
+
+Introduce a **reserved vs active KV** mental model in your notes:
+
+- **Reserved KV** – what the system must *be prepared* to hold given `max-model-len` and concurrency limits:
+
+  ```text
+  KV_reserved_per_seq ≈ KV_bytes_per_token_est × max-model-len
+  KV_reserved_total   ≈ KV_reserved_per_seq × max_concurrency
+  ```
+
+- **Active KV** – what is **actually in use** at a moment (current sequence lengths across live requests).
+
+Explain:
+
+- vLLM has to **plan for worst-case** (`max-model-len` for each admitted sequence), so `max-model-len` is a *reservation* decision, not just a feature cap.  
+- Real traffic usually has shorter sequences, so **active KV < reserved KV**, but **OOM still happens** when many sequences simultaneously approach worst-case lengths.  
+- This is where **admission control** and **request shaping** live: deciding how many sequences you’re willing to admit given `max-model-len`, VRAM, and latency SLOs.
+
+Calling this out explicitly connects your Tier 3 measurements to:
+
+- how you design `max-num-seqs` / concurrency caps,  
+- how you might later implement adaptive `max-model-len` or per-endpoint caps.
+
+#### 4) VRAM Headroom Equation (Budgeting Tool)
+
+Turn your measurements into a simple **headroom equation** you can reuse:
+
+```text
+VRAM_total
+− model_weights
+− runtime_buffers
+− safety_margin
+= KV_budget
+```
+
+Then:
+
+```text
+KV_budget / (KV_bytes_per_token_est × max-model-len)
+≈ max_safe_concurrency
+```
+
+Use your `kv_cache_scaling.csv` and model docs to approximate:
+
+- `model_weights` (GiB),  
+- `runtime_buffers` (activation/graph/other overhead),  
+- `KV_bytes_per_token_est` (from your slope).
+
+In `kv_cache_scaling_notes.md`, plug in **two concrete scenarios**:
+
+- **Latency-first**: pick a modest `max-model-len` (e.g. 4K) and derive a conservative `max_safe_concurrency` that leaves extra margin for spikes.  
+- **Throughput-first**: either accept a larger `max-model-len` at lower concurrency, or keep `max-model-len` smaller and push concurrency up to just below your p95 knee.
+
+This turns Tier 3 into a **decision tool**, not just a plot.
 
 ---
 
@@ -232,6 +385,31 @@ if __name__ == "__main__":
   main()
 ```
 
+#### 1b) Why Concurrency Boosts tok/s (Until It Doesn’t)
+
+Tie your concurrency experiments to **kernel efficiency**:
+
+- As concurrency increases, the scheduler can **form larger effective batches** per decode step.  
+- Larger batches → larger GEMMs and attention kernels → better **SM occupancy** and **tensor core utilization**.  
+- Kernel launch overhead is amortized across more tokens; memory accesses become more coalesced.
+
+This is why:
+
+- moving from concurrency 1 → 4 → 8 usually increases tokens/sec and GPU utilization.
+
+But there are hard limits:
+
+- **Memory bandwidth** – beyond some point, attention/GEMM become **bandwidth-bound**, not compute-bound.  
+- **Scheduler contention & queues** – more concurrent sequences mean more scheduling work and more time waiting in queues.  
+- **KV memory pressure** – higher concurrency at large `max-model-len` approaches KV capacity, pushing you toward OOM or eviction.
+
+In your `batching_benchmark.md`, add a short section like:
+
+> **“Why concurrency increases tok/s until it doesn’t”**  
+> - At low concurrency, decode batches are too small; SMs are under-utilized.  
+> - As concurrency grows, effective batch size grows and tok/s rises.  
+> - Past the knee, GPU is saturated; extra concurrency mostly adds queueing delay and p95 blow-up with little throughput gain.
+
 #### 2) Run the benchmark under a fixed server config
 
 - Pick one `max-model-len` (e.g. 4096)
@@ -259,6 +437,29 @@ concurrency,mean_e2e_s,p95_e2e_s,qps,tok_s,gpu_util_pct,notes
 - 3–5 bullets that capture your **“rules of thumb”**:
   - e.g. “On this GPU + SLM, concurrency N–M is the sweet spot for 4K contexts.”
   - “Beyond concurrency K, p95 blows up without meaningful throughput gains.”
+
+#### 2b) Queueing Theory View of p95 (Why Tails Explode)
+
+Give yourself a lightweight queueing lens on your concurrency results:
+
+- Roughly, decode can be viewed as an **M/G/1 queue**:
+  - arrivals (requests) at rate λ,  
+  - service time (decode work) with mean `E[S]`,  
+  - utilization `ρ ≈ λ · E[S]`.
+
+- At **low utilization** (`ρ` well below 1):
+  - latency ≈ service time; queueing delay is small.  
+  - p50 and p95 are close together.
+
+- As **utilization approaches 1**:
+  - queueing delay grows non-linearly;  
+  - p95 (and p99) explode even if mean service time changes little.
+
+Add a note in `batching_benchmark.md` like:
+
+> “The p95 blow-up at concurrency K is not a vLLM bug; it’s queueing physics from running too close to 100% utilization.”
+
+This explains **why “just turn up concurrency” is not free throughput**: beyond the knee, extra concurrency mostly buys you **latency pain**, not tok/s gains.
 
 What’s expected here (and why):
 
@@ -386,6 +587,29 @@ What’s expected here (and why):
   - p95 (and ideally p99) latency stays within your SLO.  
   - Concurrency is below the knee where adding more requests mostly increases queuing, not throughput.  
 Your Tier 3 tables should let you pick and justify such a point, e.g. “`max-model-len=4096`, concurrency 8–12.”
+
+### D) Controlled Ablations & “What Breaks First”
+
+To sharpen causality, add a couple of **one-variable ablations**:
+
+- Fix concurrency, vary `max-model-len` → isolate **KV pressure** and see when you approach OOM or aggressive eviction.  
+- Fix `max-model-len`, vary concurrency → isolate **batching/queueing behavior** and find the p95 knee.  
+- (Optional) Compare different dtypes (bf16 vs fp16) if relevant, or different allocator/page configs if you expose them.
+
+In your notes, explicitly answer:
+
+- **What breaks first on this GPU + SLM?**  
+  - OOM / allocation failures,  
+  - p95/p99 latency collapse,  
+  - scheduler thrash or timeouts.
+
+And note the **early warning signals** you’d watch in production:
+
+- GPU utilization trending toward 100% while p95 drifts up,  
+- VRAM usage approaching your calculated `KV_budget`,  
+- spikes in engine logs related to allocation / eviction.
+
+This makes Tier 3 useful not just for sizing, but for **failure-mode thinking**.
 
 **Q5. How would you explain to an SRE why “just turning up concurrency” is not a free way to get more throughput?**  
 **A:** Increasing concurrency increases the pool of work the scheduler can batch, which helps **until** the GPU is saturated. Past that point, new requests mostly wait in queues, increasing TTFT and p95/p99 without proportionally increasing tok/s. Moreover, higher concurrency with a large `max-model-len` increases KV memory pressure, risking OOMs or forced evictions. So concurrency must be tuned together with `max-model-len` and latency SLOs, not treated as a free dial.
