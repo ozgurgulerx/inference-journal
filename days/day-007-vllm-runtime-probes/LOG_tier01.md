@@ -267,6 +267,125 @@ A cheap diagnostic you’ll like:
 - Which knobs we can safely adjust (model size, `max-model-len`, batching policy) and what they trade off.
 ```
 
+### Streams, Concurrency, and TTFT (Mental Model)
+
+Short answer: **attention doesn’t mix, but the streams absolutely *do* impact each other.** Just not in the way people first think.
+
+#### Setup (your terms, precise)
+
+- **m streams** = m user prompts currently *active* in vLLM (running)
+- **n concurrency** = how many the system *allows in-flight* (client + server admission)
+- GPU executes **m sequences in parallel**
+- **Attention is per-sequence only** ✅ (no cross-prompt leakage)
+
+So far, all correct.
+
+#### Where the intuition breaks
+
+> “in theory these don’t really impact each other”
+
+They **don’t interact semantically**, but they **absolutely interact physically and temporally**.
+
+They compete on **shared resources**.
+
+##### 1. What does *not* interact
+
+Let’s be explicit:
+
+- ❌ No attention mixing  
+- ❌ No KV sharing  
+- ❌ No prompt leakage  
+- ❌ No cross-token influence  
+
+Each stream has:
+
+- its own KV pages  
+- its own attention mask  
+- its own token history  
+
+So **model correctness is isolated**.
+
+##### 2. What *does* interact (this is the important part)
+
+**A) Scheduler time-slicing (TTFT impact)**  
+
+- vLLM’s scheduler runs in *ticks*.  
+- If `m = 4`, each stream gets serviced frequently; if `m = 64`, each stream waits longer between turns.  
+- More streams ⇒ fewer scheduling turns per stream ⇒ **higher TTFT per stream**, even though attention is isolated. **Time is shared.**
+
+**B) GPU compute saturation (throughput vs latency)**  
+
+All streams share:
+
+- SMs  
+- memory bandwidth  
+- tensor cores  
+- kernel launch slots  
+
+As `m` grows:
+
+- tokens/sec ↑ (good)  
+- per-request latency ↑ (bad)  
+
+This is the classic **throughput–latency tradeoff**.
+
+**C) KV cache pressure (capacity coupling)**  
+
+Each stream consumes roughly:
+
+```text
+KV memory ≈ O(max-model-len × hidden_dim × layers)
+```
+
+As `m` increases:
+
+- total KV footprint ↑  
+- fewer new streams can be admitted  
+- eviction / queuing increases  
+- OOM risk rises  
+
+So streams don’t mix — but they **crowd each other out**.
+
+**D) Prefill contention (cold-path interaction)**  
+
+If multiple streams arrive together:
+
+- their **prefills are batched**  
+- prefills are heavy (large matmuls)  
+- later streams may wait behind earlier prefills  
+
+Result: **TTFT inflation even before decode starts**.
+
+##### 3. The correct mental model
+
+> **Streams are semantically independent but operationally coupled through the scheduler, GPU compute, and KV memory budget.**
+
+Or even sharper:
+
+> **vLLM batches compute, not context — but latency is still a shared resource.**
+
+##### 4. Why this matters operationally
+
+This is why:
+
+- “attention doesn’t mix” ≠ “requests don’t affect each other”  
+- p95 TTFT explodes under load even though outputs are correct  
+- tuning `max-num-seqs`, `max-model-len`, and client concurrency is mandatory
+
+##### 5. Simple thought experiment
+
+If streams truly didn’t impact each other:
+
+- TTFT would be constant as `m → ∞`  
+- GPU utilization wouldn’t matter  
+- capacity planning would be trivial  
+
+None of that is true in reality — which proves the coupling is **physical, not logical**.
+
+**Crisp answer you can reuse:**
+
+> They don’t impact each other *semantically*, but they strongly impact each other *through scheduling delay, compute contention, and KV memory pressure*, which directly affects TTFT, throughput, and capacity.
+
 ---
 
 ### 4) Minimal sanity checks (optional but fast)
@@ -357,3 +476,17 @@ This turns Tier 1 from a one‑off experiment into a reusable **playbook** for r
 **Reading:**  
 - Day 006 README for OS‑level context (THP, hugepages, page cache, allocator) that feeds into cold vs warm behavior.  
 - Day 007 README (this file) as the runtime‑level counterpart.
+
+**Extra note on `max-model-len` vs model context length**  
+
+Yes — with one important constraint:
+
+- **`max-model-len` (vLLM)** = **server cap** on *prompt_tokens + generated_tokens* (total sequence length) for any request. It’s an admission-control + memory-budget knob.  
+- **Model context length** = what the model is **actually capable of** (trained/implemented positional encoding limits).
+
+So the “capacity commitment” framing is correct as long as:
+
+- `max-model-len` **≤** the model’s real supported context length → you’re choosing to cap it lower for capacity/latency reasons.  
+- If you set `max-model-len` **>** the model’s real limit, you’re not “unlocking more”; you’re in “may break / may need RoPE scaling / may be rejected” territory.
+
+Why this matters: even if the model supports 32K context, setting `max-model-len=32K` forces vLLM to plan KV/cache capacity for that worst case, which can dramatically reduce safe concurrency on a given GPU. That’s exactly why Tier 1 + Tier 3 treat `max-model-len` as both a **functional** and a **capacity** knob.
