@@ -246,8 +246,6 @@ Cold-start stack note (page cache vs HBM):
 
 **Page cache** vs **HBM load**:
 
-Yes — that’s the right mental model, with two tweaks:
-
 1. **Page cache** = *storage → CPU RAM* (kernel keeps file pages cached).
 2. **HBM load** = *CPU RAM → GPU HBM* (CUDA/runtime does allocations + copies over PCIe/NVLink).
 
@@ -332,6 +330,124 @@ On the first run(s), you might observe:
 
 - **Page cache fill dominated**: disk read throughput spikes; `Cached:` rises; GPU mostly idle early.  
 - **CUDA graph warm-up dominated**: disk is quiet; GPU does compute; CPU overhead is noticeable; subsequent runs become consistently faster even if files were already cached.
+
+### First-Time KV / Buffer Allocations (Cold-Path Cost)
+
+“First-time KV / buffer allocations” refers to the **one-time GPU (and sometimes CPU) memory allocations and initializations** that happen the **first time the model executes a real request path**, not at process start. These allocations are **lazy by design** and directly inflate cold TTFT.
+
+#### 1) KV Cache Allocations (The Big One)
+
+For each active sequence, vLLM needs to allocate **KV cache memory** on the GPU:
+
+- Keys + values  
+- For **every transformer layer**  
+- For **every attention head**  
+- For up to **`max-model-len` tokens** (capacity commitment)
+
+Roughly:
+
+```text
+KV size ∝ layers × heads × head_dim × max-model-len × dtype
+```
+
+vLLM does **not** allocate the full KV cache at server startup because:
+
+- it doesn’t yet know how many sequences will be active,  
+- it doesn’t want to over-commit VRAM prematurely.
+
+Instead:
+
+- KV pages are allocated **when the first request arrives**,  
+- often in chunks/pages (PagedAttention),  
+- sometimes progressively as sequences are admitted.
+
+That means:
+
+- **`cold_1` pays the allocation + bookkeeping cost**,  
+- **`warm_1+` reuses already-allocated pages**.
+
+This shows up as:
+
+- a **GPU memory jump** on the first request,  
+- extra latency even if weights are already in HBM.
+
+#### 2) Attention / Workspace Buffers (Temporary but Persistent)
+
+Beyond KV, each forward pass needs **workspace buffers**, for example:
+
+- attention scratch buffers,  
+- temporary GEMM workspaces (cuBLASLt / CUTLASS),  
+- layernorm / softmax intermediates,  
+- reduction buffers.
+
+These buffers:
+
+- are allocated on first use,  
+- are often cached by the framework for reuse,  
+- depend on **tensor shapes**, which only become known when a real request runs.
+
+So the first real prefill/decode:
+
+- triggers these allocations,  
+- subsequent iterations largely reuse them.
+
+#### 3) CUDA Allocator & Memory Pool Setup
+
+On the first GPU allocations:
+
+- PyTorch / CUDA initializes internal memory pools,  
+- sets up bookkeeping structures,  
+- may grow pools in multiple steps.
+
+This is **not free** (mutexes, synchronization, page table updates, sometimes device-wide syncs), and it is mostly paid once then amortized.
+
+#### 4) Why This Affects TTFT
+
+TTFT includes **everything up to the first token**:
+
+```text
+TTFT_cold ≈ weight load (if cold)
+          + HBM transfers
+          + runtime warmup (kernels / CUDA graphs)
+          + first-time KV / buffer allocations
+          + first prefill compute
+          + scheduling delay
+```
+
+KV / buffer allocations happen **before the first token can be emitted**, so they inflate **cold TTFT** but not steady-state throughput.
+
+#### 5) How to Recognize KV / Buffer Allocation Cost
+
+Signals that cold_1 is dominated by KV / buffer allocations:
+
+- Disk is quiet (page cache already warm).  
+- GPU memory **jumps during the first request**, not at server start.  
+- GPU util spikes briefly, then stabilizes.  
+- CPU time is non-trivial during `cold_1`.  
+- Second request is dramatically faster, even with an identical prompt.
+
+Compared to page cache fill:
+
+| Symptom                     | Page cache fill  | KV / buffer alloc      |
+| --------------------------- | ---------------- | ---------------------- |
+| Disk I/O                    | High             | Low                    |
+| GPU util early              | Low              | Moderate               |
+| GPU mem jump                | Early/gradual    | Sharp on first request |
+| Repro after restart only    | Yes              | Yes                    |
+| Repro after cache drop only | Yes              | No                     |
+
+Because KV allocation size is proportional to `max-model-len`, larger `max-model-len` values:
+
+- increase KV page size,  
+- increase first-time allocation work,  
+- and **make cold-path latency worse**, which is why `max-model-len` is also a **latency knob**, not just a functional limit.
+
+**Repo-ready summary**  
+> **First-time KV / buffer allocations** are the one-off GPU memory allocations that occur when vLLM processes its first real request. They include KV cache pages for active sequences and temporary workspace buffers for attention and GEMM operations. Because these allocations are done lazily (on first use), they inflate cold TTFT but are amortized across subsequent requests, which reuse the allocated memory.
+
+You can keep in mind the one-line intuition:
+
+> **Weights make the model exist; KV/buffer allocations make it *runnable*.**
 
 ## How I’d explain TTFT to an SRE
 - What TTFT represents in user experience terms.
