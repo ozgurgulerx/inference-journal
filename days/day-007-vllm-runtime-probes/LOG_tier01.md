@@ -386,6 +386,38 @@ None of that is true in reality — which proves the coupling is **physical, not
 
 > They don’t impact each other *semantically*, but they strongly impact each other *through scheduling delay, compute contention, and KV memory pressure*, which directly affects TTFT, throughput, and capacity.
 
+### Batching (What We Mean Precisely)
+
+It is **not** the case that different Streaming Multiprocessors (SMs) are assigned to different user requests or different matrices. GPUs do **not** operate by mapping “one stream → one SM” or “one matrix → one SM.”
+
+Instead, **batching works by *structurally enlarging the dimensions of a single logical computation***.
+
+When multiple inference streams are active, the runtime **stacks token-level work from all streams along the batch dimension**, forming **one larger matrix operation** (for example, a larger GEMM or attention computation). This **single, batched operation** is then launched as **one GPU kernel**.
+
+That kernel:
+
+- is decomposed internally into **many small tiles** (blocks of the matrix),  
+- each tile is scheduled dynamically by the GPU across **all available SMs**,  
+- and all SMs cooperate to compute different parts of the *same* batched operation.
+
+As a result:
+
+- SMs are not tied to individual streams or matrices,  
+- streams do not “own” compute units,  
+- and parallelism emerges from **tiling a large batched matrix**, not from running many small matrices independently.
+
+Batching therefore **increases the effective problem size** seen by the GPU, allowing the kernel to:
+
+- launch enough warps to fully occupy SMs,  
+- amortize kernel launch overhead,  
+- improve memory coalescing,  
+- and saturate tensor cores.
+
+This is why batching is essential even on GPUs with many cores: **a single stream typically produces matrices that are too small to efficiently occupy the hardware**, especially during token-by-token decoding. By stacking tokens from multiple streams into one batched computation, the runtime transforms many small, inefficient operations into a single large, hardware-efficient one.
+
+**Ultra-concise version (reuseable definition)**  
+> **Batching does not assign streams to SMs; it enlarges the matrix dimensions so a single kernel can be tiled across all SMs, letting the entire GPU cooperatively execute one batched computation.**
+
 ---
 
 ### 4) Minimal sanity checks (optional but fast)
