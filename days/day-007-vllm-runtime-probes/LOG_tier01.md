@@ -261,6 +261,78 @@ A cheap diagnostic you’ll like:
 - If during `cold_1` you see **high disk reads**, **Cached/buffers rising**, and **GPU util low early** → page cache fill dominated.
 - If you see **GPU memory jump** + **PCIe TX/RX high** (or NVLink) → HBM transfer/alloc dominated.
 
+### CUDA Graph Warm-Up (What’s Actually Happening)
+
+“**Initial CUDA graph warm-up**” is the **one-time cost** you pay the *first time* the server runs the model in a given shape, when it sets up **captured/reusable GPU execution graphs** (and related kernel/autotune caches) so later iterations run with lower overhead and more stable latency.
+
+#### What a CUDA Graph Is (Mechanically)
+
+Normally, each inference step does:
+
+1. CPU enqueues a bunch of GPU kernels (GEMMs, attention kernels, layernorm, memcpy, etc.).  
+2. The GPU executes them.
+
+That CPU→GPU enqueue path has non-trivial overhead:
+
+- kernel launch overhead  
+- Python/dispatcher overhead  
+- synchronization points  
+
+A **CUDA Graph** lets the runtime:
+
+- record (“capture”) the *sequence of GPU ops* for a typical step,  
+- “instantiate” it into a reusable graph executable,  
+- then replay it many times with much less CPU launch overhead and fewer scheduling hiccups.
+
+After warm-up, the server can do:
+
+- **one graph replay call** (or a small number) instead of launching dozens/hundreds of kernels individually.
+
+#### What “Warm-Up” Means Here
+
+On the **first request(s)** after start, the server may need to:
+
+- run one or more “dummy” steps to **trigger kernel selection/autotuning** (cuBLASLt, cutlass kernels, attention kernels),  
+- allocate and initialize buffers (workspace, KV pages, scratch),  
+- **capture** a representative execution into a CUDA Graph,  
+- **instantiate** the graph (non-free: it allocates metadata and fixes kernel launch topology),  
+- sometimes compile/load kernels (depends on stack: Triton, PyTorch Inductor, etc.).
+
+That’s why you often see: cold_1 is large, warm_1 smaller — and you write things like “with a smaller bump from initial CUDA graph warm-up.”
+
+#### Why It Affects TTFT
+
+TTFT is “time until first token.” The first token includes:
+
+- prefill compute,  
+- plus any one-time setup the first time you exercise the path.
+
+Graph warm-up adds latency to early requests because capture/instantiation happens **on that path**.
+
+#### What It Is *Not*
+
+- Not “loading weights” (that’s storage→RAM→HBM).  
+- Not “page cache fill.”  
+- Not “KV cache scaling.”  
+
+It’s specifically about **reducing kernel-launch overhead / improving steady-state performance** by recording a stable GPU op sequence.
+
+#### How You’d Recognize It in Practice
+
+On the first run(s), you might observe:
+
+- CPU time higher (launching/capturing),  
+- GPU utilization pattern: brief spikes, then more regular,  
+- logs mentioning “capturing CUDA graph” / “graph enabled” (sometimes),  
+- subsequent runs with:
+  - lower wall time,  
+  - lower variance.
+
+#### How to Separate It from Page Cache Fill (Fast Heuristic)
+
+- **Page cache fill dominated**: disk read throughput spikes; `Cached:` rises; GPU mostly idle early.  
+- **CUDA graph warm-up dominated**: disk is quiet; GPU does compute; CPU overhead is noticeable; subsequent runs become consistently faster even if files were already cached.
+
 ## How I’d explain TTFT to an SRE
 - What TTFT represents in user experience terms.
 - Why cold vs warm matter for incident/debugging.
@@ -458,6 +530,67 @@ Example note you could write (adapt numbers to your case):
 
 > “On this node with Phi‑3 Mini, cold TTFT is ~2.8× warm (cold ≈ 1.2 s, warm ≈ 430 ms). Most of the extra cold time looks like storage + page cache fill and one‑time CUDA/graph warmup (GPU util is low until the tail of the first request, then normal afterwards). Once warm, TTFT is stable within ~10% at ~400–450 ms, so I’d treat 450 ms as my steady‑state TTFT budget for this SLM. Operationally, this means after a restart we should expect the first 1–2 requests to be slow, but everything after that should sit near the warm number unless the GPU is overloaded or batching is misconfigured.”
 
+## Latency Stack & Knobs (Summary)
+
+Yes — that’s basically the cold-path bundle, and the knob list above is directionally right. Here’s a “corrected + complete” summary you can keep in mind when interpreting your Tier 1 numbers.
+
+### The Latency Stack (Cold → Warm)
+
+1. **Storage → host DRAM** (Linux page cache fill / major page faults)  
+   - First load after reboot / cache drop: the kernel must read weight files into RAM.  
+   - This is the “page cache fill” component (often dominates cold if storage is slow).
+
+2. **Host DRAM → GPU HBM** (PCIe / NVLink transfers + GPU allocations)  
+   - The runtime allocates GPU buffers and copies (or stages) weights into HBM.  
+   - This can overlap with (1), but is a distinct cost.
+
+3. **Runtime warm-up** (kernel selection/autotune, CUDA Graph capture/instantiate, allocator setup)  
+   - One-time overhead to get to steady-state low-overhead execution.  
+   - Often “first request slow, next requests stable.”
+
+So the 3-part breakdown you’re using is correct: **page cache fill + HBM transfer/alloc + runtime warm-up**, followed by **prefill compute + scheduling/queueing**.
+
+### The Knobs: Latency vs Capacity vs Throughput
+
+**A) Hard capacity knobs** (indirectly hit TTFT via queueing + OOM risk)
+
+- **`max-model-len`** — biggest one; sets worst-case KV footprint per sequence.  
+- **`gpu-memory-utilization`** — how aggressively vLLM can consume VRAM (headroom).  
+- (Plus model choice / dtype / quantization, which also affect capacity and latency.)
+
+**B) Concurrency knobs**
+
+Two kinds:
+
+- **Client-side concurrency** (your load generator):  
+  more in-flight requests ⇒ more batching opportunity ⇒ more queueing ⇒ TTFT up.
+
+- **Server-side concurrency caps** (vLLM engine):  
+  - **`max-num-seqs`** — caps active sequences (true in-engine concurrency).  
+  - If client concurrency > `max-num-seqs`, the rest wait in the server queue.
+
+**C) Batching policy knobs** (the “how big each scheduler tick is” dials)
+
+- **`max-num-batched-tokens`** — the real “batch budget” per scheduler iteration (prefill+decode).  
+  Bigger = higher throughput, higher TTFT under load.  
+- **Chunked prefill** (if enabled) — prevents long prompts from monopolizing; tends to reduce tail TTFT in mixed workloads.  
+- Policy-adjacent knobs like **prompt/prefix caching** reduce prefill work and indirectly change batching behavior.
+
+### What’s Missing but Matters for Latency
+
+- **Prefill vs decode mix** — long prompts can hurt TTFT for everyone unless you chunk prefill.  
+- **KV block/page config** (engine internals) — affects memory efficiency/fragmentation and can change admission/queueing behavior.  
+- **Warm pool / pre-warm** — operational knob that makes “cold TTFT” mostly irrelevant in production.
+
+### One-Liner to Lock It In
+
+> **Cold TTFT ≈ (storage→DRAM page cache fill) + (DRAM→HBM transfers/allocs) + (one-time runtime warm-up) + (prefill compute) + (queueing from concurrency/batching policy).**
+
+In practice, once you decide your targets (interactive TTFT p95 and throughput tokens/sec), you can define two concrete presets:
+
+- **Interactive** — lower `max-num-batched-tokens`, tighter concurrency, chunked prefill on; prioritize TTFT.  
+- **Throughput** — higher `max-num-batched-tokens` and `max-num-seqs`, looser TTFT; prioritize tokens/sec.
+
 ---
 
 ## Expected Artifact
@@ -498,6 +631,60 @@ Example note you could write (adapt numbers to your case):
 **Reading:**  
 - vLLM docs/blog on continuous batching.  
 - General LLM serving articles that frame batching as a TTFT vs throughput trade‑off.
+
+### Batching Policy (Practical Knobs)
+
+Ozgur — in *this doc*, “**batching policy**” really means **how aggressively vLLM forms token batches per scheduler tick**, and **how it prioritizes (or avoids starving) different requests**. You control it via **engine/scheduler knobs** (mostly CLI flags), not via “GPU cores.”
+
+#### The 3 Primary Batching-Policy Knobs
+
+These are the ones that directly shape batching behavior:
+
+1. **`--max-num-batched-tokens`**  
+   Caps **total tokens processed per scheduler iteration** (prefill + decode).  
+   - ↑ higher → bigger per-tick batch → **more throughput**, but **more queueing / higher TTFT** under load.  
+   - ↓ lower → smaller per-tick batch → **lower TTFT**, but **worse GPU utilization**.  
+   See vLLM “Engine Arguments” docs for details.
+
+2. **`--max-num-seqs`**  
+   Caps how many **active sequences** can be scheduled per iteration (and effectively limits concurrent in-flight requests inside the engine).  
+   - ↑ higher → more streams can join the batch → higher throughput.  
+   - but also increases KV pressure and queueing, and can OOM depending on `max-model-len` and `gpu-memory-utilization`.  
+   See vLLM “Engine Arguments” docs.
+
+3. **`--max-model-len`** (indirect but huge)  
+   Sets the **worst-case KV commitment per sequence**, which strongly limits how large `max-num-seqs` can realistically be.  
+   See vLLM optimization/tuning docs.
+
+#### The “Policy” Part: Avoiding Long Prompts Ruining Latency
+
+If you want something that feels like a *policy* (who gets served first), the practical lever is:
+
+- **`--enable-chunked-prefill`**  
+  This changes scheduling by **chunking large prefills** so they can be interleaved with decode steps, preventing long prompts from monopolizing the engine. This often improves tail latency / TTFT for short requests under mixed workloads. Under the hood, chunked prefill introduces extra scheduler parameters like “how many long prefills can run concurrently” — exposed via vLLM’s scheduler config.
+
+#### Prefix Caching: Policy-Adjacent (Not Batching, but Changes Prefill Load)
+
+**Automatic Prefix Caching** (`enable_prefix_caching=True` / `--enable-prefix-caching` depending on entrypoint/version) reduces repeated prefill work when many requests share a prefix, which *indirectly* changes batching dynamics because prefill becomes cheaper.
+
+#### How to Express “Batching Policy” (Concretely)
+
+In practice, “policy” = **a tuple**:
+
+- **batch budget**: `max-num-batched-tokens`  
+- **concurrency budget**: `max-num-seqs`  
+- **KV budget**: `max-model-len` + `gpu-memory-utilization`  
+- **fairness strategy**: chunked prefill on/off (+ its scheduler config)  
+
+That’s the minimal set that actually moves TTFT-vs-throughput behavior in a controlled way.
+
+#### Super Practical Tuning Rules
+
+- If **TTFT too high** and GPU isn’t pegged → **lower `max-num-batched-tokens`** first.  
+- If **OOM / KV pressure** → lower **`max-model-len`** or **`max-num-seqs`**.  
+- If **mixed long+short prompts cause spikes** → turn on **`--enable-chunked-prefill`**.  
+
+Later, when you record your vLLM launch flags + GPU type + typical prompt/gen lengths, you can derive tight “policy presets” (interactive vs throughput modes) with specific values for these knobs.
 
 **Q5. What should an SRE take away from these Tier 1 experiments?**  
 **A:** They should leave with a simple mental model:  
