@@ -22,6 +22,8 @@ If you cannot cite a Groq reference in your engagement, label it **Assumption to
 
 If you want a clean, GPU-native hierarchy to anchor the contrast, use `gpu_to_lpu_bridge.md` (includes a local visual: `assets/gpu_arch.png`).
 
+If you want the same contrast anchored to a single LLM decode loop and what “compile” means for that loop, use `llm_inference_gpu_vs_lpu.md`.
+
 ### 1.1 Deterministic single-program execution (vs GPU “many schedulers”)
 
 - **Fact (from Groq reference):** Groq emphasizes deterministic execution; the compiler produces a static schedule. *(Attach the specific Groq reference.)*

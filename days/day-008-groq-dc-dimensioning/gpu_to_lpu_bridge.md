@@ -46,3 +46,4 @@ Groq’s promise isn’t “a faster GPU.” It’s closer to:
 
 If you keep this translation discipline, you get the benefit of GPU intuition (hierarchy + scheduling) without importing the wrong levers into Groq dimensioning.
 
+Next: for the same comparison anchored on **one LLM token-generation example**, use `llm_inference_gpu_vs_lpu.md`.
