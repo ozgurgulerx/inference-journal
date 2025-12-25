@@ -44,6 +44,18 @@ Mitigations:
 - treat compiled artifacts as immutable build outputs,
 - maintain a compile farm and an artifact registry.
 
+### 2.3 Cross-compiler literacy: how GPU toolchains mislead Groq designs
+
+This is the “translate without importing assumptions” section. You should be fluent in GPU inference compilers (TensorRT/ORT/TVM) to avoid abusing Groq.
+
+| Ecosystem | What it optimizes | Typical mode | Groq-native translation |
+|---|---|---|---|
+| TensorRT | kernel fusion + tactic selection | runtime/build-time autotuning + kernels | Groq compiler emits a deterministic whole-graph schedule; you don’t “swap tactics at runtime” without changing the artifact |
+| ONNX Runtime | graph rewrites + backend EP selection | dynamic selection of providers | Groq import/compile is the backend; treat provider/backend as an explicit deployment choice |
+| TVM | schedule search/autotuning | explores many schedules per target | Groq compiler is effectively the schedule author; your lever is shape discipline + artifact selection, not runtime exploration |
+
+**GPU intuition trap:** “We can just port our TensorRT/Triton habits.” On Groq, the runtime lever is admission and routing; the performance lever is compilation inputs and artifact choice.
+
 ### 2.2 “Model parallelism” on Groq ≠ GPU tensor/pipeline parallelism
 
 GPU world:
@@ -133,6 +145,31 @@ If arrivals have burst factor `B` (peak/mean over window):
 
 ---
 
+## 5.1 Compression as a DC Design Lever (Quantization, Pruning, Distillation)
+
+This is where general inference engineering skills directly change your facility plan.
+
+- **Inference:** If a model can be distilled or structurally reduced to fit into fewer LPUs (or smaller partitions), your **rack count, cabling, and redundancy math** can change more than any micro-optimization.
+- **Assumption to validate:** Exact numeric modes supported by your Groq SKU/compiler (e.g., “TruePoint” claims in Groq materials). Treat numerics as part of the compiled artifact and validate accuracy per mode.
+
+### Quantization (Groq-native stance)
+
+- **Inference:** Quantization is not “turn on INT8 and win.” It is:
+  - an accuracy contract (golden sets),
+  - a compiler/schedule contract (what ops are supported),
+  - an ops contract (separate artifacts per numeric mode).
+
+### Pruning (Groq-native stance)
+
+- **Inference:** Unstructured sparsity rarely helps unless the hardware/compiler exploits it. Structured pruning changes shapes and can change placement and schedule efficiency (good or bad).
+- **Decision:** Only pursue pruning if it simplifies shapes or reduces partition count in a way that materially reduces failure-domain coupling or rack count.
+
+### Distillation (Groq-native stance)
+
+- **Inference:** Distillation is often the cleanest way to “fit” within SRAM-driven constraints: a smaller student model can shift you from multi-LPU partitioning to single-replica service units, simplifying fabric and tail behavior.
+
+---
+
 ## 6) Data Center Failure Modes (The Physical World Still Wins)
 
 ### 6.1 Power
@@ -197,4 +234,3 @@ You can defend:
 - a queueing + admission policy that bounds p99,
 - a failure-domain-aware redundancy plan,
 - a cross-rack scaling position (allowed vs forbidden, with rationale).
-

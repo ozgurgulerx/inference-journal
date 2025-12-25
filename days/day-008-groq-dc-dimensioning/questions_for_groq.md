@@ -14,6 +14,10 @@ Use these to eliminate ambiguity. Anything unanswered becomes an explicit assump
 6. What is the best practice for **artifact provenance** (hash inputs, determinism of compile outputs)?
 7. How should we think about **multi-tenancy**: compile-time partitioning vs runtime scheduling?
 8. What are the supported/unsupported **precision modes** and their performance implications?
+9. What is the recommended workflow for **profiling and schedule inspection** (e.g., GroqView or equivalent), and what artifacts/counters should we export for SRE dashboards?
+10. Does the compiler provide an **a priori latency estimator** per artifact/shape, and what is its error envelope?
+11. What import formats are officially supported (ONNX, MLIR, framework frontends), and what are the known fidelity/performance pitfalls of each?
+12. How are **custom ops** handled (plugins, lowering strategy, fallback behavior), and how does that affect determinism and artifact portability?
 
 ---
 
@@ -24,6 +28,7 @@ Use these to eliminate ambiguity. Anything unanswered becomes an explicit assump
 3. What are the thermal/power behaviors under sustained batch-1 decode at high utilization?
 4. What telemetry is available for debugging schedule inefficiency (bubbles/stalls)?
 5. What is the practical granularity of “a replica”: full chip vs partitions?
+6. Are there named numeric modes (e.g., “TruePoint” as described in Groq materials), and what are the exact accumulator/rounding behaviors we should assume for accuracy validation?
 
 ---
 
@@ -49,6 +54,7 @@ Use these to eliminate ambiguity. Anything unanswered becomes an explicit assump
    - queueing delay?
 4. What is the recommended strategy for **long-context** requests?
 5. What is the maximum safe utilization for stable p99 (the “knee”), and how does it vary by model?
+6. Do you recommend any runtime-level batching, or is the intended strategy “batch-1 + concurrency + routing”? If batching exists, is it an explicit compile-time schedule feature?
 
 ---
 
@@ -59,4 +65,4 @@ Use these to eliminate ambiguity. Anything unanswered becomes an explicit assump
 3. What are the fabric cabling requirements and installation tolerances?
 4. What is the bring-up/burn-in procedure and acceptance testing plan for a new pod?
 5. What spares inventory is recommended on-site (cables, nodes, PSUs, fans)?
-
+6. If the deployment is a GroqRack-style system, what are the **pod unit boundaries** and “do not violate” constraints for expansion (cabling, power, airflow)?

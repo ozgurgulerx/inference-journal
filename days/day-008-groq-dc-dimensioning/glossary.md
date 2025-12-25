@@ -16,6 +16,14 @@
 
 **LPU:** Groq’s Language Processing Unit; treated here as a compiler-scheduled deterministic compute engine optimized for inference.
 
+**GroqWare:** Groq’s software/tooling suite (vendor term); treat the official Groq documentation as the source of truth for components and support boundaries.
+
+**GroqFlow:** Groq’s model import/compile workflow/tooling (vendor term); in this playbook, it is the place you get: compilation, artifact metadata, and (ideally) performance reports.
+
+**GroqView:** Groq’s profiling/visualization tooling (vendor term); use it (or the current equivalent) to extract schedule-level evidence for “where time goes” beyond end-to-end latency.
+
+**GroqRack:** A rack-scale Groq deployment unit (vendor term); treat its topology/power/cooling/cabling constraints as “part of the machine,” not optional infra.
+
 **Pool:** A set of replicas serving the same compiled artifact and shape bucket(s), with its own admission control and queue.
 
 **Prefill:** The phase where the prompt tokens are processed to initialize attention/KV state for generation.
@@ -32,6 +40,20 @@
 
 **TTFT:** Time To First Token; must be defined precisely (does it include queueing? prefill? network?).
 
+**TruePoint:** A Groq vendor term for a numeric format/approach described in some Groq materials; do not assume details—confirm the exact precision/accumulation/rounding behavior for your SKU and compiler version before using it in accuracy-critical claims.
+
+---
+
+## Comparative Ecosystem Terms (For Translation, Not As Design Targets)
+
+**TensorRT:** NVIDIA’s GPU inference compiler/runtime. Useful as a contrast case: GPUs often rely on kernel libraries and tactic selection, while Groq relies on whole-graph static scheduling.
+
+**ONNX / ONNX Runtime:** A portable model format and a runtime with multiple hardware “execution providers.” Useful analogy for “portable graph → hardware-specific backend,” but do not assume Groq behaves like ORT providers.
+
+**TVM:** A compiler stack emphasizing schedule exploration/autotuning. Useful for understanding schedule search, but Groq compilation aims at deterministic schedules rather than runtime exploration.
+
+**Olive (Microsoft):** A hardware-aware optimization toolchain built on ONNX Runtime concepts; useful as a template for building a policy-driven artifact pipeline (optimize → measure → select), including for Groq artifacts.
+
 ---
 
 ## GPU Intuition Traps (Glossary Entries)
@@ -39,4 +61,3 @@
 **Dynamic batching (GPU-style):** Opportunistic runtime merging of heterogeneous requests to increase throughput; often increases queueing delay and violates deterministic service assumptions on Groq unless explicitly supported.
 
 **“Caches will save us”:** A mental model where irregular access patterns are forgiven by caching; Groq-native thinking requires explicit shape and residency planning.
-

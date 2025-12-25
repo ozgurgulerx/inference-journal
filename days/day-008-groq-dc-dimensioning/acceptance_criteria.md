@@ -51,3 +51,4 @@ Day 008 is “done” only if all criteria below are satisfied.
 
 - All non-verified specifics are labeled **Assumption to validate**.
 - Every “Fact (from Groq reference)” claim is supportable by an artifact you can request from Groq.
+- External benchmark claims are treated as hypotheses and are not used as primary dimensioning inputs without validation.

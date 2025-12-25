@@ -231,6 +231,8 @@ This is the key bridge to runtime/capacity planning:
 
 **Decision framing:** “We can make service time predictable per bucket; we cannot make user demand predictable without bucketing, caps, and routing.”
 
+**Complementary resource (not Groq-specific, but directly relevant):** Sebastian Raschka’s *Build a Reasoning Model (From Scratch)* (Manning MEAP, 2025) is a good way to internalize why inference-time “reasoning” increases compute (more tokens and/or more inference calls). Use that intuition when you choose bucket caps, admission policies, and degraded-mode behavior.
+
 ---
 
 ## 6) Tier 01 Checklist (What You Must Be Able To Do From Memory)
@@ -239,3 +241,20 @@ This is the key bridge to runtime/capacity planning:
 - Define the Groq deployment artifact as a compiled schedule with explicit shapes.
 - Describe why “shape discipline” is an operational requirement, not an optimization.
 - State what you assume about RealScale, and list exactly what you need Groq to confirm.
+
+---
+
+## Tier 01 Reinforcement Reading (High Signal)
+
+Use these to solidify the mental model beyond slogans:
+
+- **Primary sources (recommended first):**
+  - Groq ISCA 2020 & 2022 papers (TSP + scale-out design). *(Assumption to validate links; prefer official PDFs if provided by Groq.)*
+  - “Inside the LPU: Deconstructing Groq’s Speed” (Groq blog, 2025). *(Fact once you pin the exact post/version.)*
+- **Tooling literacy (required for Tier 02 measurement):**
+  - GroqFlow + compiler documentation and any GroqView/profiler docs. *(Fact once pinned.)*
+- **Intuition builders (use carefully; third-party):**
+  - Abhinav Upadhyay’s LPU architecture deep-dive.
+  - Igor Arsovski interview/tutorial video.
+
+**Rule:** Use third-party resources to build intuition; use Groq references to make claims in design reviews.

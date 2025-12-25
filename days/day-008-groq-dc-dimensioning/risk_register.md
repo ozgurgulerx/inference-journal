@@ -121,3 +121,15 @@
   - Track assumptions explicitly.
   - Convert critical assumptions into questions (see `questions_for_groq.md`).
 - Owner: Tech Lead
+
+## R11 — Custom Ops / Unsupported Graph Patterns Force Fallbacks
+
+- Likelihood: M | Impact: H
+- Description: Unsupported operators or graph constructs can force slow fallback paths or require custom lowering, breaking service-time assumptions.
+- Triggers: Adding new model components, MoE variants, custom attention, nonstandard preprocessing in-graph.
+- Detection: Compile warnings/failures; unexpected service time shifts after “minor” model changes.
+- Mitigations:
+  - Operator subset policy + CI checks.
+  - Early compile validation of graph diffs.
+  - Clear plugin/custom-op strategy and performance gates.
+- Owner: ML Platform + Compiler liaison
