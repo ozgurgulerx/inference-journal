@@ -18,6 +18,10 @@ If you cannot cite a Groq reference in your engagement, label it **Assumption to
 
 ## 1) Groq LPU Mental Model (Rebuilt From First Principles)
 
+### 1.0 A GPU mental model (for contrast)
+
+If you want a clean, GPU-native hierarchy to anchor the contrast, use `gpu_to_lpu_bridge.md` (includes a local visual: `assets/gpu_arch.png`).
+
 ### 1.1 Deterministic single-program execution (vs GPU “many schedulers”)
 
 - **Fact (from Groq reference):** Groq emphasizes deterministic execution; the compiler produces a static schedule. *(Attach the specific Groq reference.)*

@@ -7,6 +7,7 @@
 **How To Use This Day**
 
 - Start with `LOG_tier01.md` to rebuild your mental model around determinism + compiler-first execution.
+- If you’re coming from GPU inference, read `gpu_to_lpu_bridge.md` first (GPU execution hierarchy → LPU contrast).
 - Use `LOG_tier02.md` to convert that mental model into sizing math, SLOs, rack design, and expansion sequencing.
 - Use `LOG_tier03.md` to pressure-test the design against failure modes, awkward model shapes, and “GPU intuition traps”.
 - Run a real meeting using `groq_meeting_runbook.md`, and use `questions_for_groq.md` + `answers_bank_top1percent.md` to control the narrative.
@@ -40,6 +41,7 @@
 - `LOG_tier01.md`: Groq LPU mental model, terminology, deterministic inference intuition.
 - `LOG_tier02.md`: Dimensioning model, SLO mapping, rack/facilities translation, scale strategy.
 - `LOG_tier03.md`: Failure modes, compiler constraints, cross-rack scaling realities, expert reasoning.
+- `gpu_to_lpu_bridge.md`: GPU execution mental model + visual, used as a contrast to Groq determinism.
 - `groq_meeting_runbook.md`: Agenda + decision-forcing prompts + whiteboard flow.
 - `dimensioning_inputs_template.md`: The exact fields you must collect.
 - `capacity_model_template.md`: A fill-in-the-blanks capacity model.
