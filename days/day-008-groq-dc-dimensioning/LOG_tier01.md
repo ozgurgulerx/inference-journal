@@ -30,6 +30,12 @@ Visual anchors:
 
 ![Transformer block diagram](assets/transformer_block_diagram.png)
 
+GPU execution stack (don’t mix these):
+
+- **Software parallelism**: kernels → threads → warps
+- **Execution/scheduling**: SMs + warp schedulers
+- **Math hardware**: ALUs + matrix engines (Tensor Cores / “GEMAs”)
+
 ### 1.1 Deterministic single-program execution (vs GPU “many schedulers”)
 
 - **Fact (from Groq reference):** Groq emphasizes deterministic execution; the compiler produces a static schedule. *(Attach the specific Groq reference.)*

@@ -17,6 +17,7 @@ This page exists for one reason: **use the GPU mental model as a contrast** so G
 - **Warp**: a fixed group of threads (typically 32) that execute in lockstep (SIMT).
 - **SM (Streaming Multiprocessor)**: a hardware block that hosts many resident warps and issues their instructions.
 - **Warp scheduler (on each SM)**: chooses which ready warp issues an instruction each cycle (helps hide memory latency).
+- **Tensor Cores / matrix engines (sometimes called “GEMAs”)**: fixed math units *inside* an SM that execute matrix-multiply instructions issued by warps; they are not scheduling units.
 
 ### Why GPUs feel “dynamic” at runtime
 
@@ -25,6 +26,12 @@ Even if *your code* is deterministic, **the exact execution interleaving is not*
 - kernels queue and contend for SM time,
 - warps stall on memory and get swapped out,
 - caches change what’s fast vs slow from moment to moment.
+
+Even with deterministic matrix engines (Tensor Cores), the system-level behavior is still dynamic because schedulers and memory decide *when* warps can feed those engines.
+
+Lock-in sentence:
+
+> **On a GPU, GEMAs/Tensor Cores are the physical matrix engines. Threads and warps orchestrate instructions that cause GEMAs to do the math.**
 
 This is why GPU inference engineering leans heavily on runtime tactics (batching windows, heuristics, warmup, profiling).
 

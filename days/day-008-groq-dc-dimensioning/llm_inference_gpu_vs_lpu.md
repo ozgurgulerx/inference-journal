@@ -53,6 +53,20 @@ This graph does not change per token; **only tensor values and KV-cache indices 
 
 ## 3) How a GPU executes this (runtime-driven)
 
+High-level, end-to-end picture (client → server → kernels → CUDA model → SM scheduling → Tensor Cores → memory):
+
+![LLM inference on a GPU (all levels)](assets/llm_inference_gpu_all_levels.png)
+
+### 3.0 The GPU execution stack (don’t mix these)
+
+When an LLM runs on a GPU, keep three layers separate:
+
+- **Software parallelism**: kernels → threads → warps (how we *describe* work)
+- **Execution/scheduling**: SMs + warp schedulers (how work gets *issued*)
+- **Math hardware**: ALUs + matrix engines (what *executes* the math)
+
+Matrix engines are the key LLM detail: most inference compute is matmul, and GPUs accelerate matmul with dedicated hardware (NVIDIA calls these **Tensor Cores**). In generic terms, you can think of them as **GEMAs** (matrix accelerators).
+
 ### 3.1 What the GPU “sees”
 
 The GPU does not see “a transformer.” It sees **many kernels** launched in sequence:
@@ -74,7 +88,40 @@ GPU execution hierarchy (threads → warps → SMs + scheduling):
 
 ![GPU execution and scheduling hierarchy](assets/gpu_arch.png)
 
-### 3.2 Why GPU timing is “dynamic”
+### 3.2 Where matmul actually happens (Tensor Cores / “GEMAs”)
+
+For matmul-heavy LLM ops (QKV projections, attention matmuls, MLP matmuls):
+
+- warps issue matrix instructions (e.g., MMA-style ops)
+- the SM routes those instructions to the **matrix engines** (Tensor Cores)
+- Tensor Cores execute the tiled matrix math; they **do not** schedule warps or “run threads”
+
+Lock-in statement:
+
+> **Threads/warps request matrix operations. GEMAs (e.g., Tensor Cores) execute the matrix multiply.**
+
+Useful mental model:
+
+`thread code → compiled into warp instructions → scheduled on an SM → invokes Tensor Cores for matrix math`
+
+What matrix engines are *not*:
+
+- not a scheduling unit (not a warp/SM scheduler)
+- not a parallelism abstraction (not a thread/warp)
+- not “aware” of your kernel’s control flow
+
+End-to-end chain (GPU-only):
+
+```
+LLM layer (matmul)
+ → kernel
+   → threads
+     → warps
+       → SM
+         → Tensor Cores / “GEMAs” execute the matrix multiply
+```
+
+### 3.3 Why GPU timing is “dynamic”
 
 At runtime, even for “the same” request:
 

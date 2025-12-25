@@ -48,6 +48,10 @@
 
 **TensorRT:** NVIDIA’s GPU inference compiler/runtime. Useful as a contrast case: GPUs often rely on kernel libraries and tactic selection, while Groq relies on whole-graph static scheduling.
 
+**Tensor Cores / matrix engines (GPU):** Dedicated matrix-math units inside a GPU SM that execute matrix-multiply instructions issued by warps (LLM matmuls spend most time here). They accelerate math but do not remove runtime scheduling and memory variability.
+
+**GEMA (generic accelerator term):** “General Matrix Accelerator” (informal/generic label) for matrix engines; on NVIDIA GPUs, the analogous unit is the Tensor Core. Use as a conceptual term only—prefer vendor terms when speaking precisely.
+
 **ONNX / ONNX Runtime:** A portable model format and a runtime with multiple hardware “execution providers.” Useful analogy for “portable graph → hardware-specific backend,” but do not assume Groq behaves like ORT providers.
 
 **TVM:** A compiler stack emphasizing schedule exploration/autotuning. Useful for understanding schedule search, but Groq compilation aims at deterministic schedules rather than runtime exploration.
