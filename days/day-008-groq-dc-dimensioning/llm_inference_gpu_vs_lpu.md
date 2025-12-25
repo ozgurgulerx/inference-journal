@@ -66,9 +66,9 @@ The GPU does not see “a transformer.” It sees **many kernels** launched in s
 
 GPU programming hierarchy (threads/blocks → device):
 
-![CUDA programming model](assets/cuda_programming_model.svg)
+![CUDA programming model](assets/cuda_programming_model.png)
 
-If your Markdown renderer doesn’t display SVGs, open `assets/cuda_programming_model.svg` directly.
+Source: `assets/cuda_programming_model.svg`.
 
 GPU execution hierarchy (threads → warps → SMs + scheduling):
 

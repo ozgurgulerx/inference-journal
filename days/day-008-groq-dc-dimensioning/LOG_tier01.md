@@ -24,6 +24,12 @@ If you want a clean, GPU-native hierarchy to anchor the contrast, use `gpu_to_lp
 
 If you want the same contrast anchored to a single LLM decode loop and what “compile” means for that loop, use `llm_inference_gpu_vs_lpu.md`.
 
+Visual anchors:
+
+![GPU execution and scheduling hierarchy](assets/gpu_arch.png)
+
+![Transformer block diagram](assets/transformer_block_diagram.png)
+
 ### 1.1 Deterministic single-program execution (vs GPU “many schedulers”)
 
 - **Fact (from Groq reference):** Groq emphasizes deterministic execution; the compiler produces a static schedule. *(Attach the specific Groq reference.)*
