@@ -57,6 +57,53 @@ High-level, end-to-end picture (client → server → kernels → CUDA model →
 
 ![LLM inference on a GPU (all levels)](assets/llm_inference_gpu_all_levels.png)
 
+Alternate view (end-to-end execution stack + callouts for KV cache, scheduling, Tensor Cores):
+
+![LLM inference on GPU — end-to-end execution stack](assets/llm_inference_gpu_end_to_end_stack.png)
+
+### 3.0 Full-stack “LLM inference on GPU” map (ASCII)
+
+This is the same idea as the diagram above, written as a single stack so it’s easy to reference in conversation.
+
+```
+0) Client / Product layer
+   user prompt → HTTP/gRPC request → streaming response tokens
+
+1) Inference server / orchestrator (CPU, SW)
+   - API router, auth, rate limits
+   - tokenizer (prompt → token IDs)
+   - scheduler / batcher (request queue, microbatch, priorities)
+   - sampler (top-k/p, temperature)
+   - KV cache manager (allocate, index, evict, paging policy)
+   - model runtime calls into CUDA (PyTorch / TensorRT / vLLM etc.)
+
+2) Framework graph & kernel dispatch (SW)
+   - model graph: LN, QKV, attention, MLP, residual, output projection
+   - decides which fused ops / kernels to launch
+   - launches CUDA kernels (or calls cuBLAS/cuBLASLt/cuDNN/TensorRT kernels)
+
+3) CUDA execution model (SW view of parallelism)
+   kernel launch → grid (many blocks) → block (many threads) → thread
+   threads are grouped into WARPS (32 threads)
+   note: warp is the scheduling unit on GPU
+
+4) GPU hardware scheduling layer (HW control)
+   GPU has many SMs (Streaming Multiprocessors)
+   - blocks assigned to SMs
+   - each SM holds many resident warps
+   - warp scheduler issues instructions each cycle (latency hiding)
+
+5) Compute units inside an SM (HW compute)
+   - scalar ALUs (FP/INT), load/store, SFUs
+   - Tensor Cores ≈ “GEMAs” (matrix engines)
+     warps issue MMA/WMMA instructions → Tensor Cores do the matmul tiles
+
+6) Memory / data movement (HW + SW effects)
+   registers (per thread), shared mem (per block), L1 (on-SM), L2 (chip), HBM
+   weights: mostly HBM → cached/streamed
+   KV cache: mostly HBM (huge) → partial reuse via L2/L1, layout-dependent
+```
+
 ### 3.0 The GPU execution stack (don’t mix these)
 
 When an LLM runs on a GPU, keep three layers separate:
@@ -121,7 +168,27 @@ LLM layer (matmul)
          → Tensor Cores / “GEMAs” execute the matrix multiply
 ```
 
-### 3.3 Why GPU timing is “dynamic”
+### 3.3 Prefill vs decode (why the workload shape changes)
+
+LLM serving has two compute phases:
+
+- **Prefill (prompt processing)**: process `P` prompt tokens to build hidden state and write KV cache for those tokens; more parallelism and “matrix-ish” work is available.
+- **Decode (token-by-token generation)**: generate 1 token at a time; lots of smaller matmuls + attention over a growing KV cache; more memory pressure (KV reads).
+
+### 3.4 Step-by-step (end-to-end)
+
+1. Request arrives (CPU): HTTP/gRPC → tokenize → enqueue with priority/SLA.
+2. Scheduler decides how to run (CPU): microbatch (maybe batch=1), allocate KV cache space.
+3. Framework launches GPU work (SW→GPU): LN/QKV GEMMs/attention/MLP/residual/output projection kernels (often via cuBLASLt and fused attention).
+4. CUDA maps kernels to warps/SMs: grid→blocks→threads→warps.
+5. GPU schedules execution (HW): SM warp schedulers interleave warps to hide stalls.
+6. Tensor Cores (“GEMAs”) do matmuls (HW): warps issue MMA/WMMA instructions; Tensor Cores execute tiles.
+7. KV cache is written/used (LLM-specific):
+   - prefill writes K/V for each prompt token
+   - decode reads past K/V for attention, then writes new K/V for the new token
+8. Sampling + streaming (CPU or GPU): logits → sample token → detokenize → stream → repeat.
+
+### 3.5 Why GPU timing is “dynamic”
 
 At runtime, even for “the same” request:
 
