@@ -1,700 +1,729 @@
-# Day 009 – KV Cache Lab (Hands-On)
+# Day 009 – KV Cache Lab (Hands-On Microtasks 1-9)
 
 > **This tier is purely procedural**: run the experiments, generate artifacts, and keep the report honest.
 
 ---
 
-## Tier 1 – Must Do: KV Cache Anatomy & Memory Profiling
+## Task 1: Environment Setup & Package Install
 
-**Title**: KV Cache Baseline Profiling  
-**Goal**: Understand how vLLM's PagedAttention manages KV cache and measure baseline memory patterns  
-**Time Budget**: ~45-60 min  
-**Outcome**: Quantified memory-per-token, block allocation patterns, and fragmentation metrics
+**Objective**: Provision the RunPod instance with all required tools and repos for Day 009.
 
----
+**Prerequisites**: Fresh GPU VM (Ubuntu) with internet access.
 
-### Step 1: Start vLLM with Debug Metrics
+**Time**: ~10 min
 
-```bash
-# From day-009 folder
-MODEL="microsoft/Phi-3-mini-4k-instruct"
-PORT=8000
+### Commands
 
-vllm serve "$MODEL" \
-  --port $PORT \
-  --disable-log-requests \
-  --enable-chunked-prefill \
-  --gpu-memory-utilization 0.85
-```
-
-Verify server is up:
-```bash
-curl -s http://localhost:$PORT/health
-```
-
-### Step 2: Capture Baseline GPU Memory
-
-Start memory monitoring in a separate terminal:
-```bash
-# Log GPU memory every 100ms during experiment
-nvidia-smi --query-gpu=timestamp,memory.used,memory.total,utilization.gpu \
-  --format=csv,nounits \
-  -lms 100 > gpu_memory_baseline.csv &
-GPU_MONITOR_PID=$!
-```
-
-### Step 3: Run Single Long-Context Request (4k tokens)
-
-Create the test script `kv_baseline_probe.py`:
-
-```python
-#!/usr/bin/env python3
-"""Single request to measure KV cache memory growth."""
-import time
-import requests
-import json
-
-BASE_URL = "http://localhost:8000/v1"
-MODEL = "microsoft/Phi-3-mini-4k-instruct"
-
-# Long prompt to fill context
-LONG_PROMPT = """You are a detailed technical writer. Write an extremely comprehensive 
-guide about distributed systems, covering consensus algorithms, replication strategies,
-partition tolerance, CAP theorem, eventual consistency, vector clocks, Paxos, Raft,
-and real-world implementations. Include code examples, diagrams descriptions, and
-performance considerations. Be as thorough as possible."""
-
-def run_long_generation():
-    start = time.time()
-    
-    response = requests.post(
-        f"{BASE_URL}/chat/completions",
-        json={
-            "model": MODEL,
-            "messages": [{"role": "user", "content": LONG_PROMPT}],
-            "max_tokens": 3500,  # Target ~4k total context
-            "temperature": 0.7,
-            "stream": True,
-            "stream_options": {"include_usage": True}
-        },
-        stream=True
-    )
-    
-    tokens_generated = 0
-    for line in response.iter_lines():
-        if line:
-            line = line.decode('utf-8')
-            if line.startswith('data: ') and line != 'data: [DONE]':
-                try:
-                    data = json.loads(line[6:])
-                    if data.get('choices', [{}])[0].get('delta', {}).get('content'):
-                        tokens_generated += 1
-                    if 'usage' in data:
-                        print(f"\nUsage: {data['usage']}")
-                except:
-                    pass
-    
-    elapsed = time.time() - start
-    print(f"Generated ~{tokens_generated} tokens in {elapsed:.2f}s")
-    print(f"Tokens/sec: {tokens_generated/elapsed:.2f}")
-
-if __name__ == "__main__":
-    run_long_generation()
-```
-
-Run it:
-```bash
-python3 kv_baseline_probe.py
-```
-
-### Step 4: Scrape vLLM KV Cache Metrics
+In a tmux session:
 
 ```bash
-# Capture cache metrics
-curl -s http://localhost:8000/metrics | grep -E "vllm_(cache|gpu|num)" > vllm_metrics_baseline.txt
+# Create day009 folder structure
+mkdir -p ~/day009/{scripts,data,logs,reports,archive}
+cd ~/day009
 
-# Key metrics to extract:
-cat vllm_metrics_baseline.txt | grep -E "(cache_config|gpu_cache_usage|num_preemptions)"
+# System packages
+sudo apt-get update && sudo apt-get install -y git wget tmux htop
+
+# Python packages
+pip install --upgrade pip
+pip install vllm transformers pycuda pynvml requests pandas
+
+# Set vLLM V1 engine
+echo 'export VLLM_USE_V1=1' >> ~/.bashrc
+source ~/.bashrc
+
+# Verify GPU
+nvidia-smi
 ```
 
-### Step 5: Calculate Memory Per Token
-
-Create `analyze_kv_memory.py`:
-
-```python
-#!/usr/bin/env python3
-"""Analyze KV cache memory from experiment data."""
-import pandas as pd
-
-# Model config for Phi-3-mini
-NUM_LAYERS = 32
-NUM_HEADS = 32
-HEAD_DIM = 96
-BYTES_PER_VALUE = 2  # bf16
-
-# Theoretical memory per token
-theoretical_per_token = 2 * BYTES_PER_VALUE * NUM_LAYERS * NUM_HEADS * HEAD_DIM
-print(f"Theoretical memory per token: {theoretical_per_token:,} bytes ({theoretical_per_token/1024:.2f} KB)")
-
-# For 4k tokens
-tokens = 4000
-total_kv_memory = tokens * theoretical_per_token
-print(f"Expected KV cache for {tokens} tokens: {total_kv_memory/1024/1024/1024:.2f} GB")
-
-# Block calculations (assuming block_size=16)
-BLOCK_SIZE = 16
-blocks_needed = (tokens + BLOCK_SIZE - 1) // BLOCK_SIZE
-wasted_slots = (blocks_needed * BLOCK_SIZE) - tokens
-fragmentation_pct = (wasted_slots / (blocks_needed * BLOCK_SIZE)) * 100
-
-print(f"\nBlock allocation (block_size={BLOCK_SIZE}):")
-print(f"  Blocks needed: {blocks_needed}")
-print(f"  Wasted slots: {wasted_slots}")
-print(f"  Fragmentation: {fragmentation_pct:.2f}%")
-```
-
-Run analysis:
-```bash
-python3 analyze_kv_memory.py
-```
-
-### Step 6: Stop Monitoring & Document Results
-
-```bash
-kill $GPU_MONITOR_PID
-
-# Analyze GPU memory growth
-python3 -c "
-import pandas as pd
-df = pd.read_csv('gpu_memory_baseline.csv')
-print('GPU Memory Stats:')
-print(f'  Start: {df[\"memory.used [MiB]\"].iloc[0]} MiB')
-print(f'  Peak:  {df[\"memory.used [MiB]\"].max()} MiB')
-print(f'  End:   {df[\"memory.used [MiB]\"].iloc[-1]} MiB')
-print(f'  Delta: {df[\"memory.used [MiB]\"].max() - df[\"memory.used [MiB]\"].iloc[0]} MiB')
-"
-```
-
-### Expected Artifact: `baseline_memory.md`
-
-Document your findings:
-```markdown
-# KV Cache Baseline Memory Profile
-
-## Configuration
-- Model: microsoft/Phi-3-mini-4k-instruct
-- Precision: bf16
-- Block size: 16 tokens
-- GPU: [your GPU]
-
-## Theoretical Calculations
-- Memory per token: X KB
-- Expected KV for 4k tokens: X GB
-- Blocks needed: X
-- Fragmentation: X%
-
-## Measured Results
-- GPU memory start: X MiB
-- GPU memory peak: X MiB  
-- GPU memory delta: X MiB
-- Blocks allocated (from metrics): X
-- Cache utilization: X%
-
-## Observations
-- [Memory growth pattern]
-- [Fragmentation vs theoretical]
-- [Any surprises]
-```
-
----
-
-## Tier 2 – Deepen: Prefix Cache Reuse Lab
-
-**Title**: Measure Prefix Caching Impact  
-**Goal**: Quantify memory savings and latency improvements from shared prefixes  
-**Time Budget**: ~30-40 min  
-**Outcome**: Side-by-side comparison of prefix caching ON vs OFF
-
----
-
-### Step 1: Create Shared Prefix Test
-
-Create `prefix_cache_test.py`:
-
-```python
-#!/usr/bin/env python3
-"""Test prefix caching with shared system prompts."""
-import time
-import requests
-import json
-import statistics
-
-BASE_URL = "http://localhost:8000/v1"
-MODEL = "microsoft/Phi-3-mini-4k-instruct"
-
-# 2k-token shared system prompt (simulate RAG context or few-shot)
-SHARED_SYSTEM_PROMPT = """You are an expert technical consultant. Here is your knowledge base:
-
-[CONTEXT BLOCK 1 - Distributed Systems]
-Distributed systems are collections of independent computers that appear to users as a single
-coherent system. Key challenges include: network partitions, clock synchronization, consensus,
-replication, and fault tolerance. The CAP theorem states that a distributed system cannot
-simultaneously provide Consistency, Availability, and Partition tolerance...
-""" + "Additional context. " * 400  # Pad to ~2k tokens
-
-# Different user queries
-USER_QUERIES = [
-    "Explain the Raft consensus algorithm in simple terms.",
-    "What are the trade-offs between strong and eventual consistency?",
-    "How does vector clocks help with conflict resolution?",
-    "Describe a real-world implementation of Paxos.",
-    "What is the difference between leader-based and leaderless replication?",
-    "How do distributed databases handle network partitions?",
-    "Explain the concept of quorum in distributed systems.",
-    "What are the advantages of CRDTs over traditional locking?",
-    "How does Apache Kafka achieve high throughput?",
-    "Describe the consensus mechanism in etcd.",
-]
-
-def measure_request(system_prompt, user_query, request_num):
-    """Measure TTFT and generation time for a single request."""
-    start = time.time()
-    ttft = None
-    tokens = 0
-    
-    response = requests.post(
-        f"{BASE_URL}/chat/completions",
-        json={
-            "model": MODEL,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_query}
-            ],
-            "max_tokens": 100,
-            "temperature": 0.7,
-            "stream": True
-        },
-        stream=True
-    )
-    
-    for line in response.iter_lines():
-        if line:
-            line = line.decode('utf-8')
-            if line.startswith('data: ') and line != 'data: [DONE]':
-                try:
-                    data = json.loads(line[6:])
-                    content = data.get('choices', [{}])[0].get('delta', {}).get('content')
-                    if content:
-                        if ttft is None:
-                            ttft = time.time() - start
-                        tokens += 1
-                except:
-                    pass
-    
-    e2e = time.time() - start
-    return {
-        'request': request_num,
-        'ttft_ms': ttft * 1000 if ttft else None,
-        'e2e_ms': e2e * 1000,
-        'tokens': tokens
-    }
-
-def run_test_batch(name, num_requests=10):
-    """Run batch of requests and collect metrics."""
-    print(f"\n{'='*60}")
-    print(f"Running: {name}")
-    print(f"{'='*60}")
-    
-    results = []
-    for i, query in enumerate(USER_QUERIES[:num_requests]):
-        result = measure_request(SHARED_SYSTEM_PROMPT, query, i+1)
-        results.append(result)
-        print(f"  Request {i+1}: TTFT={result['ttft_ms']:.1f}ms, E2E={result['e2e_ms']:.1f}ms")
-    
-    ttfts = [r['ttft_ms'] for r in results if r['ttft_ms']]
-    print(f"\nSummary:")
-    print(f"  TTFT p50: {statistics.median(ttfts):.1f}ms")
-    print(f"  TTFT p95: {sorted(ttfts)[int(len(ttfts)*0.95)]:.1f}ms")
-    print(f"  TTFT mean: {statistics.mean(ttfts):.1f}ms")
-    
-    return results
-
-if __name__ == "__main__":
-    results = run_test_batch("Prefix Cache Test", 10)
-    
-    # Save results
-    with open('prefix_cache_results.json', 'w') as f:
-        json.dump(results, f, indent=2)
-```
-
-### Step 2: Test WITHOUT Prefix Caching
-
-```bash
-# Restart vLLM WITHOUT prefix caching
-pkill -f "vllm serve"
-sleep 5
-
-vllm serve "$MODEL" \
-  --port 8000 \
-  --disable-log-requests \
-  --gpu-memory-utilization 0.85 &
-
-sleep 30  # Wait for model load
-
-# Capture baseline metrics
-curl -s http://localhost:8000/metrics | grep vllm_gpu_cache > metrics_no_prefix.txt
-
-# Run test
-python3 prefix_cache_test.py
-mv prefix_cache_results.json prefix_results_OFF.json
-
-# Capture post-test metrics
-curl -s http://localhost:8000/metrics | grep vllm_gpu_cache >> metrics_no_prefix.txt
-```
-
-### Step 3: Test WITH Prefix Caching
-
-```bash
-# Restart vLLM WITH prefix caching
-pkill -f "vllm serve"
-sleep 5
-
-vllm serve "$MODEL" \
-  --port 8000 \
-  --disable-log-requests \
-  --enable-prefix-caching \
-  --gpu-memory-utilization 0.85 &
-
-sleep 30
-
-# Capture baseline metrics
-curl -s http://localhost:8000/metrics | grep vllm_gpu_cache > metrics_with_prefix.txt
-
-# Run test
-python3 prefix_cache_test.py
-mv prefix_cache_results.json prefix_results_ON.json
-
-# Capture post-test metrics
-curl -s http://localhost:8000/metrics | grep vllm_gpu_cache >> metrics_with_prefix.txt
-```
-
-### Step 4: Compare Results
-
-Create `compare_prefix_results.py`:
-
-```python
-#!/usr/bin/env python3
-"""Compare prefix caching ON vs OFF results."""
-import json
-import statistics
-
-def load_results(filename):
-    with open(filename) as f:
-        return json.load(f)
-
-def analyze(results, label):
-    ttfts = [r['ttft_ms'] for r in results if r['ttft_ms']]
-    e2es = [r['e2e_ms'] for r in results]
-    
-    print(f"\n{label}:")
-    print(f"  TTFT - p50: {statistics.median(ttfts):.1f}ms, mean: {statistics.mean(ttfts):.1f}ms")
-    print(f"  E2E  - p50: {statistics.median(e2es):.1f}ms, mean: {statistics.mean(e2es):.1f}ms")
-    
-    # First vs subsequent (shows cache warm-up effect)
-    print(f"  First request TTFT: {ttfts[0]:.1f}ms")
-    print(f"  Subsequent avg TTFT: {statistics.mean(ttfts[1:]):.1f}ms")
-    
-    return ttfts, e2es
-
-off_results = load_results('prefix_results_OFF.json')
-on_results = load_results('prefix_results_ON.json')
-
-ttft_off, e2e_off = analyze(off_results, "Prefix Caching OFF")
-ttft_on, e2e_on = analyze(on_results, "Prefix Caching ON")
-
-# Calculate improvements
-ttft_improvement = (statistics.mean(ttft_off[1:]) - statistics.mean(ttft_on[1:])) / statistics.mean(ttft_off[1:]) * 100
-print(f"\n{'='*60}")
-print(f"TTFT improvement (subsequent requests): {ttft_improvement:.1f}%")
-print(f"{'='*60}")
-```
-
-Run comparison:
-```bash
-python3 compare_prefix_results.py
-```
-
-### Expected Artifact: `prefix_cache_results.md`
-
-```markdown
-# Prefix Cache Reuse Lab Results
-
-## Test Configuration
-- Shared prefix: ~2k tokens (system prompt)
-- Unique queries: 10 different user questions
-- Max output tokens: 100
-
-## Results: Prefix Caching OFF
-| Metric | First Request | Subsequent (avg) |
-|--------|---------------|------------------|
-| TTFT   | X ms          | X ms             |
-| E2E    | X ms          | X ms             |
-
-## Results: Prefix Caching ON  
-| Metric | First Request | Subsequent (avg) |
-|--------|---------------|------------------|
-| TTFT   | X ms          | X ms             |
-| E2E    | X ms          | X ms             |
-
-## Improvements
-- TTFT improvement (subsequent): X%
-- Memory savings: ~90% for prefix portion
-- Effective throughput increase: ~X%
-
-## Key Observations
-- First request pays full prefix computation cost
-- Subsequent requests skip prefix entirely (hash match)
-- Memory footprint significantly reduced
-```
-
----
-
-## Tier 3 – Stretch: Cache Block Size Tuning
-
-**Title**: Find Optimal Block Size for Your Hardware  
-**Goal**: Compare block sizes (16, 32, 64) and measure trade-offs  
-**Time Budget**: ~20-30 min  
-**Outcome**: Block size recommendation for your workload
-
----
-
-### Step 1: Create Block Size Sweep Script
-
-Create `block_size_sweep.sh`:
+### Create `scripts/setup_env.sh`
 
 ```bash
 #!/bin/bash
-MODEL="microsoft/Phi-3-mini-4k-instruct"
-PORT=8000
+# Day 009 Environment Setup
+set -e
+
+echo "=== Day 009 Environment Setup ==="
+
+# Create folder structure
+mkdir -p ~/day009/{scripts,data,logs,reports,archive}
+
+# Install dependencies
+sudo apt-get update && sudo apt-get install -y git wget tmux htop
+pip install --upgrade pip
+pip install vllm transformers pycuda pynvml requests pandas
+
+# Set environment
+export VLLM_USE_V1=1
+echo 'export VLLM_USE_V1=1' >> ~/.bashrc
+
+# Verify
+echo "=== Verification ==="
+python -c "import vllm; print(f'vLLM version: {vllm.__version__}')"
+nvidia-smi --query-gpu=name,memory.total --format=csv
+
+echo "=== Setup Complete ==="
+```
+
+**Expected Artifacts**:
+- `scripts/setup_env.sh`
+- `logs/setup.txt` (console output)
+
+**Success Criteria**:
+- `python -c "import vllm"` runs without error
+- `nvidia-smi` shows GPU
+
+**Failure Modes**:
+- pip install failures → retry with `--no-cache-dir`
+- GPU driver issues → ensure NVIDIA driver present on RunPod base image
+
+---
+
+## Task 2: Sanity Check Model Load & Generation
+
+**Objective**: Verify the model loads in vLLM and a simple prompt generates output.
+
+**Prerequisites**: Task 1 done; choose model (e.g., `meta-llama/Llama-2-7b-chat-hf`).
+
+**Time**: ~5 min
+
+### Commands
+
+```bash
+cd ~/day009
+
+# Set model (adjust as needed)
+export MODEL="meta-llama/Llama-2-7b-chat-hf"
+
+# Quick generation test using vLLM CLI
+vllm complete --model $MODEL \
+  --prompt "Hello, my name is" \
+  --max-tokens 10 \
+  2>&1 | tee logs/sanity_check.log
+```
+
+### Alternative: Python Script
+
+Create `scripts/sanity_check.py`:
+
+```python
+#!/usr/bin/env python3
+"""Verify model loads and generates output."""
+import os
+from vllm import LLM, SamplingParams
+
+MODEL = os.environ.get("MODEL", "meta-llama/Llama-2-7b-chat-hf")
+
+print(f"Loading model: {MODEL}")
+llm = LLM(model=MODEL, trust_remote_code=True)
+
+sampling_params = SamplingParams(temperature=0.7, max_tokens=20)
+prompts = ["Hello, my name is"]
+
+print("Generating...")
+outputs = llm.generate(prompts, sampling_params)
+
+for output in outputs:
+    print(f"Prompt: {output.prompt!r}")
+    print(f"Output: {output.outputs[0].text!r}")
+    
+print("\n=== Sanity check PASSED ===")
+```
+
+Run:
+```bash
+python scripts/sanity_check.py 2>&1 | tee logs/sanity_check.log
+```
+
+**Expected Artifacts**:
+- Console print of completion (e.g., "Hello, my name is John...")
+- `logs/sanity_check.log`
+
+**Success Criteria**:
+- Model loads into memory (~7GB VRAM for 7B model)
+- Produces tokens without errors
+- Latency is reasonable (few seconds)
+
+**Failure Modes**:
+- OOM on model load → use smaller model or lower precision (`--dtype half`)
+- Missing model → ensure HuggingFace auth if model is gated
+- vLLM errors → check `VLLM_USE_V1=1` is set
+
+---
+
+## Task 3: Baseline Profiling (No Prefix Reuse, Default Block)
+
+**Objective**: Measure baseline latency and throughput with prefix caching disabled and default block size.
+
+**Prerequisites**: Task 2 success.
+
+**Time**: ~15 min
+
+### Commands
+
+```bash
+cd ~/day009
+export MODEL="meta-llama/Llama-2-7b-chat-hf"
+
+# Run baseline benchmark
+vllm bench throughput \
+  --model $MODEL \
+  --dataset-name random \
+  --input-len 50 \
+  --output-len 50 \
+  --num-prompts 200 \
+  --no-enable-prefix-caching \
+  --block-size 32 \
+  --output-json logs/baseline.json \
+  2>&1 | tee logs/baseline_run.log
+```
+
+### Create `scripts/run_baseline.sh`
+
+```bash
+#!/bin/bash
+# Baseline profiling - no prefix caching, default block size
+set -e
+cd ~/day009
+
+MODEL="${MODEL:-meta-llama/Llama-2-7b-chat-hf}"
+
+echo "=== Baseline Profiling ==="
+echo "Model: $MODEL"
+echo "Prefix caching: OFF"
+echo "Block size: 32"
+
+vllm bench throughput \
+  --model $MODEL \
+  --dataset-name random \
+  --input-len 50 \
+  --output-len 50 \
+  --num-prompts 200 \
+  --no-enable-prefix-caching \
+  --block-size 32 \
+  --output-json logs/baseline.json
+
+echo "=== Results saved to logs/baseline.json ==="
+```
+
+### Create `reports/baseline_report.md` Template
+
+```markdown
+# Baseline Profiling Report
+
+## Configuration
+- Model: [MODEL_NAME]
+- Input length: 50 tokens
+- Output length: 50 tokens
+- Num prompts: 200
+- Prefix caching: OFF
+- Block size: 32
+
+## Results
+- Throughput: X tokens/sec
+- TTFT p50: X ms
+- TTFT p95: X ms
+- TTFT p99: X ms
+- E2E latency p50: X ms
+- E2E latency p95: X ms
+
+## Observations
+- [Note any patterns or surprises]
+```
+
+**Expected Artifacts**:
+- `logs/baseline.json` with throughput, latency distribution
+- `reports/baseline_report.md` summarizing findings
+
+**Success Criteria**:
+- Run completes without errors (few minutes)
+- JSON shows sane numbers (TTFT ~hundreds ms, throughput ~thousands tokens/sec)
+
+**Failure Modes**:
+- Benchmark CLI fails → write custom loop with `vllm.LLM`
+- OOM with 200 prompts → reduce `--num-prompts` to 100
+
+---
+
+## Task 4: Prefix Caching OFF – Shared Prefix Scenario
+
+**Objective**: Simulate workload where many requests share a common prefix, without caching, to measure redundant computation cost.
+
+**Prerequisites**: Task 3 done; example prefix prepared.
+
+**Time**: ~15 min
+
+### Commands
+
+```bash
+cd ~/day009
+export MODEL="meta-llama/Llama-2-7b-chat-hf"
+
+# Run shared prefix test WITHOUT caching
+vllm bench throughput \
+  --model $MODEL \
+  --dataset-name sharegpt \
+  --input-len 100 \
+  --output-len 20 \
+  --num-prompts 100 \
+  --no-enable-prefix-caching \
+  --block-size 32 \
+  --output-json logs/prefix_off.json \
+  2>&1 | tee logs/prefix_off_run.log
+```
+
+### Create `scripts/run_prefix_off.sh`
+
+```bash
+#!/bin/bash
+# Shared prefix scenario - caching OFF
+set -e
+cd ~/day009
+
+MODEL="${MODEL:-meta-llama/Llama-2-7b-chat-hf}"
+
+echo "=== Prefix Caching OFF Test ==="
+echo "Model: $MODEL"
+echo "Prefix caching: OFF"
+
+vllm bench throughput \
+  --model $MODEL \
+  --dataset-name sharegpt \
+  --input-len 100 \
+  --output-len 20 \
+  --num-prompts 100 \
+  --no-enable-prefix-caching \
+  --block-size 32 \
+  --output-json logs/prefix_off.json
+
+echo "=== Results saved to logs/prefix_off.json ==="
+```
+
+**Expected Artifacts**:
+- `logs/prefix_off.json` with metrics
+- Note: TTFT expected to be high (each request processes full prefix)
+
+**Success Criteria**:
+- Run completes
+- Average latency higher than baseline (long prefill per request)
+
+**Failure Modes**:
+- Dataset issues → use `--dataset-name random` with `--prefix-len 100` if available
+- OOM → reduce `--num-prompts` to 50
+
+---
+
+## Task 5: Prefix Caching ON – Shared Prefix Scenario
+
+**Objective**: Rerun the same shared-prefix workload with prefix caching enabled.
+
+**Prerequisites**: Task 4 completed.
+
+**Time**: ~15 min
+
+### Commands
+
+```bash
+cd ~/day009
+export MODEL="meta-llama/Llama-2-7b-chat-hf"
+
+# Run shared prefix test WITH caching
+vllm bench throughput \
+  --model $MODEL \
+  --dataset-name sharegpt \
+  --input-len 100 \
+  --output-len 20 \
+  --num-prompts 100 \
+  --enable-prefix-caching \
+  --block-size 32 \
+  --output-json logs/prefix_on.json \
+  2>&1 | tee logs/prefix_on_run.log
+```
+
+### Create `scripts/run_prefix_on.sh`
+
+```bash
+#!/bin/bash
+# Shared prefix scenario - caching ON
+set -e
+cd ~/day009
+
+MODEL="${MODEL:-meta-llama/Llama-2-7b-chat-hf}"
+
+echo "=== Prefix Caching ON Test ==="
+echo "Model: $MODEL"
+echo "Prefix caching: ON"
+
+vllm bench throughput \
+  --model $MODEL \
+  --dataset-name sharegpt \
+  --input-len 100 \
+  --output-len 20 \
+  --num-prompts 100 \
+  --enable-prefix-caching \
+  --block-size 32 \
+  --output-json logs/prefix_on.json
+
+echo "=== Results saved to logs/prefix_on.json ==="
+```
+
+### Create `reports/prefix_caching_report.md`
+
+```markdown
+# Prefix Caching Comparison Report
+
+## Configuration
+- Model: [MODEL_NAME]
+- Shared prefix: ~100 tokens
+- Output length: 20 tokens
+- Num prompts: 100
+
+## Results
+
+| Metric | Caching OFF | Caching ON | Improvement |
+|--------|-------------|------------|-------------|
+| Throughput (tok/s) | X | X | +X% |
+| TTFT p50 (ms) | X | X | -X% |
+| TTFT p95 (ms) | X | X | -X% |
+| E2E p50 (ms) | X | X | -X% |
+
+## Analysis
+- First request: pays full prefix computation cost
+- Subsequent requests: skip prefix (KV blocks reused from cache)
+- Memory savings: ~90% for prefix portion across all requests
+
+## Key Insight
+> "TTFT dropped from Y to Z ms (~N% improvement) when enabling prefix caching, 
+> thanks to reusing cached KV for the 100-token prefix."
+```
+
+**Expected Artifacts**:
+- `logs/prefix_on.json` with metrics
+- `reports/prefix_caching_report.md` comparing Task 4 vs Task 5
+
+**Success Criteria**:
+- Metrics show notable improvement vs Task 4
+- Throughput higher, TTFT/latencies lower
+
+**Failure Modes**:
+- Results similar to Task 4 → verify `--enable-prefix-caching` was used
+- Cache eviction → unlikely for 100 prompts, but check memory usage
+
+---
+
+## Task 6: Block Size Sweep – 16 vs 32
+
+**Objective**: Evaluate how KV cache block size affects performance and memory.
+
+**Prerequisites**: Baseline done.
+
+**Time**: ~20 min
+
+### Commands
+
+```bash
+cd ~/day009
+export MODEL="meta-llama/Llama-2-7b-chat-hf"
+
+# Test block_size=16
+vllm bench throughput \
+  --model $MODEL \
+  --dataset-name random \
+  --input-len 50 \
+  --output-len 50 \
+  --num-prompts 200 \
+  --no-enable-prefix-caching \
+  --block-size 16 \
+  --output-json logs/block_sweep_16.json \
+  2>&1 | tee logs/block_16_run.log
+
+# Test block_size=32
+vllm bench throughput \
+  --model $MODEL \
+  --dataset-name random \
+  --input-len 50 \
+  --output-len 50 \
+  --num-prompts 200 \
+  --no-enable-prefix-caching \
+  --block-size 32 \
+  --output-json logs/block_sweep_32.json \
+  2>&1 | tee logs/block_32_run.log
+```
+
+### Create `scripts/run_block_sweep.sh`
+
+```bash
+#!/bin/bash
+# Block size sweep: 16, 32, 64
+set -e
+cd ~/day009
+
+MODEL="${MODEL:-meta-llama/Llama-2-7b-chat-hf}"
 
 for BLOCK_SIZE in 16 32 64; do
     echo "=========================================="
     echo "Testing block_size=$BLOCK_SIZE"
     echo "=========================================="
     
-    # Restart vLLM with specific block size
-    pkill -f "vllm serve" 2>/dev/null
-    sleep 5
-    
-    vllm serve "$MODEL" \
-      --port $PORT \
-      --disable-log-requests \
+    vllm bench throughput \
+      --model $MODEL \
+      --dataset-name random \
+      --input-len 50 \
+      --output-len 50 \
+      --num-prompts 200 \
+      --no-enable-prefix-caching \
       --block-size $BLOCK_SIZE \
-      --gpu-memory-utilization 0.85 &
-    
-    sleep 30  # Wait for model load
-    
-    # Capture config
-    curl -s http://localhost:$PORT/metrics | grep vllm_cache_config > "metrics_block${BLOCK_SIZE}.txt"
-    
-    # Run standardized test (multiple short sequences)
-    python3 block_size_test.py --block-size $BLOCK_SIZE
-    
-    # Capture final metrics
-    curl -s http://localhost:$PORT/metrics | grep -E "(vllm_cache|vllm_gpu)" >> "metrics_block${BLOCK_SIZE}.txt"
+      --output-json logs/block_sweep_${BLOCK_SIZE}.json \
+      2>&1 | tee logs/block_${BLOCK_SIZE}_run.log || echo "block_size=$BLOCK_SIZE failed or unsupported"
 done
+
+echo "=== Block sweep complete ==="
 ```
 
-### Step 2: Create Test Script
+**Expected Artifacts**:
+- `logs/block_sweep_16.json`
+- `logs/block_sweep_32.json`
+- Comparison data for `reports/block_tuning_report.md`
 
-Create `block_size_test.py`:
+**Success Criteria**:
+- Both runs complete
+- block_size=16 may show slightly lower throughput than 32 (more overhead)
+- Check vLLM logs at startup for "# GPU blocks: N"
 
-```python
-#!/usr/bin/env python3
-"""Test different block sizes with varied sequence lengths."""
-import argparse
-import time
-import requests
-import json
-import statistics
-
-BASE_URL = "http://localhost:8000/v1"
-MODEL = "microsoft/Phi-3-mini-4k-instruct"
-
-# Test with varying sequence lengths to expose fragmentation
-PROMPTS = [
-    ("short", "What is 2+2?"),  # ~10 tokens
-    ("medium", "Explain quantum computing in three paragraphs."),  # ~50 tokens output
-    ("long", "Write a detailed essay about climate change."),  # ~200 tokens output
-]
-
-def run_test(block_size):
-    print(f"\nBlock size: {block_size}")
-    results = []
-    
-    for name, prompt in PROMPTS:
-        for _ in range(5):  # 5 iterations each
-            start = time.time()
-            response = requests.post(
-                f"{BASE_URL}/chat/completions",
-                json={
-                    "model": MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 250,
-                    "temperature": 0.7
-                }
-            )
-            elapsed = (time.time() - start) * 1000
-            
-            data = response.json()
-            tokens = data['usage']['completion_tokens']
-            results.append({
-                'type': name,
-                'tokens': tokens,
-                'latency_ms': elapsed,
-                'ms_per_token': elapsed / tokens if tokens > 0 else 0
-            })
-    
-    # Summarize
-    for prompt_type in ['short', 'medium', 'long']:
-        subset = [r for r in results if r['type'] == prompt_type]
-        avg_latency = statistics.mean([r['latency_ms'] for r in subset])
-        avg_ms_per_tok = statistics.mean([r['ms_per_token'] for r in subset])
-        print(f"  {prompt_type}: avg latency={avg_latency:.1f}ms, ms/token={avg_ms_per_tok:.2f}")
-    
-    # Save
-    with open(f'block_test_{block_size}.json', 'w') as f:
-        json.dump(results, f, indent=2)
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--block-size', type=int, default=16)
-    args = parser.parse_args()
-    run_test(args.block_size)
-```
-
-### Step 3: Run the Sweep
-
-```bash
-chmod +x block_size_sweep.sh
-./block_size_sweep.sh
-```
-
-### Step 4: Analyze Results
-
-Create `analyze_block_sizes.py`:
-
-```python
-#!/usr/bin/env python3
-"""Compare block size experiment results."""
-import json
-import statistics
-
-def load_and_analyze(block_size):
-    with open(f'block_test_{block_size}.json') as f:
-        results = json.load(f)
-    
-    # Calculate fragmentation (theoretical)
-    # For sequences of various lengths
-    total_tokens = sum(r['tokens'] for r in results)
-    total_blocks = sum((r['tokens'] + block_size - 1) // block_size for r in results)
-    wasted = total_blocks * block_size - total_tokens
-    frag_pct = wasted / (total_blocks * block_size) * 100
-    
-    avg_ms_per_token = statistics.mean([r['ms_per_token'] for r in results])
-    
-    return {
-        'block_size': block_size,
-        'fragmentation_pct': frag_pct,
-        'avg_ms_per_token': avg_ms_per_token,
-        'total_blocks': total_blocks
-    }
-
-print("Block Size Analysis")
-print("="*60)
-print(f"{'Block Size':>12} {'Fragmentation':>15} {'ms/token':>12} {'Blocks':>10}")
-print("-"*60)
-
-for bs in [16, 32, 64]:
-    try:
-        r = load_and_analyze(bs)
-        print(f"{r['block_size']:>12} {r['fragmentation_pct']:>14.1f}% {r['avg_ms_per_token']:>11.2f} {r['total_blocks']:>10}")
-    except FileNotFoundError:
-        print(f"{bs:>12} (not tested)")
-```
-
-Run analysis:
-```bash
-python3 analyze_block_sizes.py
-```
-
-### Expected Artifact: `block_size_analysis.md`
-
-```markdown
-# Block Size Tuning Analysis
-
-## Test Configuration
-- Model: Phi-3-mini-4k-instruct
-- Workloads: short (~10 tok), medium (~50 tok), long (~200 tok)
-- Iterations: 5 per workload type
-
-## Results
-
-| Block Size | Fragmentation | ms/token | Total Blocks |
-|------------|---------------|----------|--------------|
-| 16         | X.X%          | X.XX     | XXX          |
-| 32         | X.X%          | X.XX     | XXX          |
-| 64         | X.X%          | X.XX     | XXX          |
-
-## Trade-off Analysis
-
-### Block Size 16 (Default)
-- ✅ Lowest fragmentation
-- ✅ Best for varied sequence lengths
-- ❌ Slightly higher per-token overhead
-
-### Block Size 32
-- Balanced fragmentation/overhead
-- Good for medium-length sequences
-
-### Block Size 64
-- ✅ Lowest per-token overhead
-- ❌ Highest memory waste
-- Best only when memory is plentiful
-
-## Recommendation for [Your GPU]
-- **Primary recommendation**: Block size X
-- **Rationale**: [why this is optimal for your workload]
-```
+**Failure Modes**:
+- `--block-size 16` unsupported → note in report (GPU may override to 32)
 
 ---
 
-## Logging Template for Tomorrow
+## Task 7: Block Size Sweep – 64 (Exploratory)
+
+**Objective**: Attempt block size = 64 to observe vLLM behavior beyond documented GPU limit.
+
+**Prerequisites**: Task 6 done.
+
+**Time**: ~10 min
+
+### Commands
+
+```bash
+cd ~/day009
+export MODEL="meta-llama/Llama-2-7b-chat-hf"
+
+# Attempt block_size=64 (may fail or be clamped)
+vllm bench throughput \
+  --model $MODEL \
+  --dataset-name random \
+  --input-len 50 \
+  --output-len 50 \
+  --num-prompts 100 \
+  --no-enable-prefix-caching \
+  --block-size 64 \
+  --output-json logs/block_sweep_64.json \
+  2>&1 | tee logs/block_64_run.log
+```
+
+**Expected Artifacts**:
+- `logs/block_sweep_64.json` OR error log
+- Note in `reports/block_tuning_report.md`
+
+**Success Criteria**:
+- Confirm system's response to unsupported block size
+- If error → that IS the result (learning constraint)
+- If runs by using 32 → note results identical to Task 6
+
+**Expected Outcome**: On CUDA devices, block sizes >32 are not supported. The config may be clamped or raise exception.
+
+---
+
+## Task 8: High-Resolution GPU Memory Logging
+
+**Objective**: Collect detailed GPU memory usage over time during generation.
+
+**Prerequisites**: Model loaded, test prompt ready.
+
+**Time**: ~15 min
+
+### Create `scripts/sample_gpu_mem.sh`
+
+```bash
+#!/bin/bash
+# High-frequency GPU memory logging (50ms intervals)
+echo "timestamp,memory_used_mib"
+while true; do
+    TS=$(date +%s.%3N)
+    MEM=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -i 0)
+    echo "$TS,$MEM"
+    sleep 0.05
+done
+```
+
+### Commands
+
+```bash
+cd ~/day009
+
+# Terminal 1: Start memory logging
+chmod +x scripts/sample_gpu_mem.sh
+scripts/sample_gpu_mem.sh > logs/gpu_mem_usage.csv &
+GPU_LOG_PID=$!
+
+# Terminal 2: Start vLLM server
+export MODEL="meta-llama/Llama-2-7b-chat-hf"
+vllm serve --model $MODEL --host 0.0.0.0 --port 8000 &
+sleep 30  # Wait for load
+
+# Run long generation
+curl -X POST http://localhost:8000/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "'$MODEL'",
+    "prompt": "Write a very long detailed essay about the history of computing...",
+    "max_tokens": 1000,
+    "temperature": 0.7
+  }'
+
+# Stop logging
+kill $GPU_LOG_PID
+pkill -f "vllm serve"
+```
+
+### Analyze Memory Trace
+
+```python
+#!/usr/bin/env python3
+"""Analyze GPU memory trace."""
+import pandas as pd
+
+df = pd.read_csv('logs/gpu_mem_usage.csv')
+df['timestamp'] = pd.to_numeric(df['timestamp'])
+df['elapsed'] = df['timestamp'] - df['timestamp'].iloc[0]
+
+print("GPU Memory Analysis:")
+print(f"  Initial: {df['memory_used_mib'].iloc[0]} MiB")
+print(f"  Peak:    {df['memory_used_mib'].max()} MiB")
+print(f"  Final:   {df['memory_used_mib'].iloc[-1]} MiB")
+print(f"  Delta:   {df['memory_used_mib'].max() - df['memory_used_mib'].iloc[0]} MiB")
+
+# Check if memory is stepwise or flat
+changes = df['memory_used_mib'].diff().abs()
+significant_changes = changes[changes > 10].count()
+print(f"  Significant changes (>10 MiB): {significant_changes}")
+```
+
+**Expected Artifacts**:
+- `logs/gpu_mem_usage.csv` with timestamped memory
+- Analysis in `reports/memory_analysis.md`
+
+**Success Criteria**:
+- Fine-grained memory log captured
+- Likely outcome: Memory mostly flat (vLLM pre-allocates KV cache at startup)
+
+**Failure Modes**:
+- nvidia-smi too slow → increase sleep to 0.1
+- OOM during generation → reduce `max_tokens` to 500
+
+---
+
+## Task 9: Inspect KV Block Allocation Logs
+
+**Objective**: Use vLLM's internal logging to find how many KV blocks are allocated.
+
+**Prerequisites**: vLLM emits log info at startup.
+
+**Time**: ~10 min
+
+### Commands
+
+```bash
+cd ~/day009
+export MODEL="meta-llama/Llama-2-7b-chat-hf"
+
+# Start vLLM and capture startup logs
+vllm serve --model $MODEL --host 0.0.0.0 --port 8000 \
+  2>&1 | tee logs/vllm_startup.log &
+
+sleep 60  # Wait for full startup
+
+# Search for block allocation info
+grep -i "block" logs/vllm_startup.log
+grep -i "GPU blocks" logs/vllm_startup.log
+grep -i "cache" logs/vllm_startup.log
+
+# Capture metrics endpoint
+curl -s http://localhost:8000/metrics | grep -i cache > logs/vllm_cache_metrics.txt
+
+pkill -f "vllm serve"
+```
+
+### Extract Block Info
+
+Look for lines like:
+```
+# GPU blocks: 3471, # CPU blocks: 680
+```
+
+Calculate:
+```python
+#!/usr/bin/env python3
+"""Calculate token capacity from block allocation."""
+
+GPU_BLOCKS = 3471  # From logs
+CPU_BLOCKS = 680   # From logs  
+BLOCK_SIZE = 16    # Default
+
+gpu_token_capacity = GPU_BLOCKS * BLOCK_SIZE
+cpu_token_capacity = CPU_BLOCKS * BLOCK_SIZE
+total_capacity = gpu_token_capacity + cpu_token_capacity
+
+print(f"GPU Token Capacity: {gpu_token_capacity:,} tokens")
+print(f"CPU Token Capacity: {cpu_token_capacity:,} tokens")
+print(f"Total Capacity: {total_capacity:,} tokens")
+
+# Cross-verify with memory
+# Per-token memory for Llama-2-7B: ~16 KB
+PER_TOKEN_KB = 16
+estimated_kv_memory_gb = (gpu_token_capacity * PER_TOKEN_KB) / 1024 / 1024
+print(f"Estimated KV Memory: {estimated_kv_memory_gb:.2f} GB")
+```
+
+**Expected Artifacts**:
+- Block counts from logs
+- Analysis in `reports/memory_analysis.md`
+
+**Success Criteria**:
+- Retrieved block counts
+- Can compute: total_token_capacity = GPU_blocks × block_size
+
+**Failure Modes**:
+- No log appears → search for `_kv_cache` or `BlockTables` in Python debug
+- If not found, rely on Task 11 formula instead
+
+---
+
+## Logging Template
 
 ```markdown
-## Day 09 Results
+## Day 09 Progress (Tasks 1-9)
 
-### Commands Run
-- [list key commands executed]
+### Environment
+- [ ] Task 1: Environment setup complete
+- [ ] Task 2: Model sanity check passed
 
-### Files Created
-- baseline_memory.md
-- prefix_cache_results.md  
-- block_size_analysis.md
-- [Python scripts]
-- [CSV/JSON data files]
+### Core Experiments  
+- [ ] Task 3: Baseline profiling done
+- [ ] Task 4: Prefix OFF results captured
+- [ ] Task 5: Prefix ON results captured
+- [ ] Task 6: Block sweep 16/32 done
 
-### Key Metrics
-- Memory per token (measured): X KB
-- Blocks for 4k tokens: X
-- Prefix cache TTFT improvement: X%
-- Optimal block size: X
+### Instrumentation (Stretch)
+- [ ] Task 7: Block 64 attempted
+- [ ] Task 8: GPU memory trace captured
+- [ ] Task 9: Block allocation logs extracted
 
-### Observations / Surprises
-- [What matched theory vs surprised you]
-- [Any performance anomalies]
-- [Memory behavior patterns]
-
-### Next Focus
-- [What to explore deeper based on findings]
+### Key Numbers
+- Baseline throughput: _____ tokens/sec
+- Baseline TTFT p95: _____ ms
+- Prefix ON vs OFF TTFT improvement: _____%
+- GPU blocks allocated: _____
+- Token capacity: _____ tokens
 ```
