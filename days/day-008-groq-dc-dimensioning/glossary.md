@@ -54,6 +54,12 @@
 
 **HBM / HBM3E:** High Bandwidth Memory: stacked DRAM with a very wide interface, packaged next to the GPU/accelerator. HBM3E is a generation of HBM; it is DRAM, but not “DDR DIMM memory.”
 
+**CoWoS (advanced packaging):** “Chip-on-Wafer-on-Substrate” (TSMC term) packaging that commonly uses a silicon interposer to connect a compute die to HBM stacks with very wide, dense links; often the real production choke point for HBM-class accelerators.
+
+**Reticle limit:** The maximum exposure field size in lithography; constrains the maximum practical size of a single monolithic die (often cited around ~`850 mm²`, but treat exact numbers as assumption until pinned).
+
+**Microbump:** A tiny solder connection used in advanced packaging (e.g., die-to-interposer, HBM-to-interposer) enabling extremely high connection density compared to conventional substrates.
+
 **Queueing delay (`T_queue`):** Time spent waiting before service begins; dominant tail driver under load in deterministic systems.
 
 **Service time (`T_service`):** Time spent in computation and deterministic data movement for a request, excluding queueing.

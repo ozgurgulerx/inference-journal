@@ -665,3 +665,11 @@ This file is designed for live meetings. Each question includes:
 - Deep: The economic trade is: pay in operational discipline and silicon specialization to buy predictable low-latency decode.
 - Red flags: “We can treat it like a GPU and change batch/seq anytime.”
 - Close: Decide the product contract (buckets/caps) and whether MoE is supported under strict constraints.
+
+7) **“Why does everyone talk about CoWoS and packaging? Isn’t the bottleneck just GPUs?”**
+
+- One-liner: For HBM-class accelerators, **advanced packaging is the enabler**; packaging capacity can be the real choke point.
+- 90s: HBM needs extremely wide, dense connections to the compute die. Conventional organic substrates can’t route that; you typically need a silicon interposer / CoWoS-class packaging. That means “wafer supply” isn’t the whole story — even if you can build compute dies, you still need packaging slots to assemble them with HBM. In AI booms, those packaging slots become scarce and strategic.
+- Deep: CoWoS is forced by (1) bandwidth/IO density (microbumps), (2) reticle/die-size constraints pushing chiplets, (3) power delivery + signal integrity, and (4) yield economics. This is why memory roadmaps are also packaging roadmaps, and why “HBM budget optimizer” thinking (prefill vs decode disaggregation) matters.
+- Red flags: “Packaging is an implementation detail.”
+- Close: Decide whether your workload strategy reduces dependence on HBM-class packaging (e.g., SRAM-first decode tier) or requires it (training/high-batch inference).

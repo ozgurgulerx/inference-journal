@@ -264,6 +264,28 @@ Meeting questions:
 
 **Inference:** Splitting inference into **prefill vs decode** lets you spend expensive bandwidth memory (HBM-like) only where it buys user-perceived latency, and serve decode with a different hardware point optimized for KV-heavy, low-batch behavior.
 
+#### 10.1.1 Why “HBM budget” is really “HBM + packaging budget” (CoWoS mental model)
+
+This is the missing link when people say “HBM is scarce/expensive”: a lot of the constraint is **advanced packaging capacity**, not just “GPU wafers.”
+
+**First-principles: why CoWoS-class packaging exists (high-level):**
+
+- **HBM bandwidth wall (routing/bumps):** HBM requires extremely wide, dense connections (many thousands of connections / microbumps) to hit multi‑TB/s aggregate bandwidth. **Assumption to validate (numbers):** order-of-magnitude `10k+` microbumps and `>3–5 TB/s` package bandwidth in modern high-end parts.
+- **Reticle limit:** a single monolithic die can’t grow forever. **Assumption to validate:** practical maximum die area is bounded by a reticle limit (often quoted around ~`850 mm²`). CoWoS enables scaling via **chiplets + interposer**, not “one bigger die.”
+- **Power density + signal integrity:** accelerators push very high package power (often `700–1000W` class systems). Short, dense signal paths and robust power delivery become a packaging problem.
+- **Yield economics:** one huge die amplifies defect sensitivity; chiplets + interposer can improve effective yield by isolating defects.
+
+**Why this matters strategically (not just technically):**
+
+- **Inference:** The bottleneck can be **CoWoS / advanced packaging slots**, not “how many GPUs we can design.” Wafer starts ≠ shippable HBM accelerators without packaging capacity.
+- **Inference (NVIDIA moat framing):** `CUDA + HBM supply + packaging allocation` becomes a real competitive lever when demand outruns packaging throughput.
+- **Groq connection (ties back to disaggregation):** SRAM-first decode engines can reduce reliance on HBM-heavy packaging for certain low-batch latency SKUs; but once you want HBM scale or tight multi-chip adjacency, you’re back in a CoWoS-class world.
+
+Optional visuals (external): CoWoS/interposer diagrams
+
+- https://i.extremetech.com/imagery/content-types/06crGe18cjHBYGiKyP6Beff/images-1.fill.size_670x318.v1686173147.png
+- https://cdn.wccftech.com/wp-content/uploads/2021/08/TSMC-Advanced-Packaging-Technologies-CoWoS-_5-1030x579.png
+
 ### 10.2 Groq-style SRAM decode thesis (why it exists)
 
 - **Inference:** A compiler-scheduled, SRAM-first decode engine lets you reserve HBM-heavy GPUs for regimes where they dominate (training, high-batch inference, heavy prefill) and push low-batch, latency-sensitive decode to an SRAM-first deterministic pipeline.

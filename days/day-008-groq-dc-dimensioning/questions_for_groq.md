@@ -35,6 +35,7 @@ Use these to eliminate ambiguity. Anything unanswered becomes an explicit assump
 7. Where does the **KV cache** live for representative LLM artifacts (pure on-chip SRAM vs staged vs off-chip memory), and what are the placement constraints as `seq_len` grows?
 8. What is the effective **memory hierarchy** we should model (SRAM tiers, any off-chip DRAM), and what telemetry exists to confirm bandwidth/latency behavior under decode?
 9. For multi-chip artifacts, what is the **communication model on the critical path** per token (what moves across chips, and when)?
+10. What packaging/topology assumptions does the hardware require at scale (board vs chassis vs rack), and what are the lead-time / supply constraints for any required memory adjacency (e.g., if any SKUs rely on HBM-class packaging vs SRAM-first designs)?
 
 ---
 
