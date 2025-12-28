@@ -8,6 +8,8 @@
 
 **Deterministic service time:** For a fixed compiled artifact and fixed shape bucket, the service time is intended to be stable/predictable (excluding queueing delay).
 
+**Deterministic schedule (compiled):** A precomputed timetable for compute + data movement for a fixed graph and shape bucket; intended to make service time predictable and shift variability to queueing/admission rather than runtime scheduling/caches.
+
 **Failure domain:** The boundary within which a fault can occur and affect service (e.g., link segment, node, rack, pod).
 
 **Headroom (`ρ_target`):** The target utilization chosen to protect tails and allow failure tolerance; lower headroom means lower utilization.
@@ -29,6 +31,26 @@
 **Prefill:** The phase where the prompt tokens are processed to initialize attention/KV state for generation.
 
 **Decode:** The autoregressive generation phase where tokens are generated one at a time using the existing context/KV state.
+
+**KV cache:** Stored attention **K**eys and **V**alues for past tokens so decode does not recompute them; decode performance is often sensitive to KV cache capacity, bandwidth, and layout.
+
+**Model width (`d_model`, hidden size):** The per-token feature dimension carried through the transformer; distinct from context length (`seq_len`). Determines attention head dimension: `d_head = d_model / n_heads`.
+
+**Multi-head attention (MHA):** Attention with multiple heads; each head has its own Q/K/V projections. In standard MHA, KV cache cost scales with the number of heads.
+
+**Grouped-Query Attention (GQA):** Attention variant where there are many query heads but fewer key/value heads (`n_kv_heads << n_heads`); multiple query heads share K/V, shrinking KV cache and reducing decode memory bandwidth needs.
+
+**Multi-Query Attention (MQA):** Extreme case of GQA with a single KV head (`n_kv_heads = 1`).
+
+**SRAM:** Fast on-chip memory (high bandwidth/low latency) used for registers/caches/scratchpads; expensive and low-density compared to DRAM.
+
+**DRAM:** Dense off-chip memory technology used for system RAM and accelerator main memory (DDR/GDDR/HBM); higher latency and lower bandwidth than SRAM on a per-access basis.
+
+**DDR (CPU memory):** Commodity DRAM interface commonly used for server system RAM (DDR4/DDR5 DIMMs). “CPU memory is SRAM” is false in the usual server sense; CPU *caches* are SRAM.
+
+**GDDR:** Graphics-oriented DRAM family used as accelerator main memory on some GPUs; distinct from DDR DIMMs and from HBM packaging.
+
+**HBM / HBM3E:** High Bandwidth Memory: stacked DRAM with a very wide interface, packaged next to the GPU/accelerator. HBM3E is a generation of HBM; it is DRAM, but not “DDR DIMM memory.”
 
 **Queueing delay (`T_queue`):** Time spent waiting before service begins; dominant tail driver under load in deterministic systems.
 

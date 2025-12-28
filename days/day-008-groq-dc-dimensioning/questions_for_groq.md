@@ -18,6 +18,9 @@ Use these to eliminate ambiguity. Anything unanswered becomes an explicit assump
 10. Does the compiler provide an **a priori latency estimator** per artifact/shape, and what is its error envelope?
 11. What import formats are officially supported (ONNX, MLIR, framework frontends), and what are the known fidelity/performance pitfalls of each?
 12. How are **custom ops** handled (plugins, lowering strategy, fallback behavior), and how does that affect determinism and artifact portability?
+13. How do you want us to treat **prefill vs decode**: one artifact per bucket, separate artifacts, or separate “modes” with distinct schedules?
+14. What are the compiler-level constraints for attention variants (**MHA vs GQA vs MQA**) and KV-cache layouts (supported `n_heads`, `n_kv_heads`, head dims)?
+15. What is the support story for **MoE models** (gating, routing, expert parallelism): supported patterns, compile-time constraints, and expected performance cliffs?
 
 ---
 
@@ -29,6 +32,9 @@ Use these to eliminate ambiguity. Anything unanswered becomes an explicit assump
 4. What telemetry is available for debugging schedule inefficiency (bubbles/stalls)?
 5. What is the practical granularity of “a replica”: full chip vs partitions?
 6. Are there named numeric modes (e.g., “TruePoint” as described in Groq materials), and what are the exact accumulator/rounding behaviors we should assume for accuracy validation?
+7. Where does the **KV cache** live for representative LLM artifacts (pure on-chip SRAM vs staged vs off-chip memory), and what are the placement constraints as `seq_len` grows?
+8. What is the effective **memory hierarchy** we should model (SRAM tiers, any off-chip DRAM), and what telemetry exists to confirm bandwidth/latency behavior under decode?
+9. For multi-chip artifacts, what is the **communication model on the critical path** per token (what moves across chips, and when)?
 
 ---
 
@@ -55,6 +61,10 @@ Use these to eliminate ambiguity. Anything unanswered becomes an explicit assump
 4. What is the recommended strategy for **long-context** requests?
 5. What is the maximum safe utilization for stable p99 (the “knee”), and how does it vary by model?
 6. Do you recommend any runtime-level batching, or is the intended strategy “batch-1 + concurrency + routing”? If batching exists, is it an explicit compile-time schedule feature?
+7. For **low-batch decode**, what is the recommended concurrency model (streams in flight, queue structure), and what are the knobs that actually move TTFT vs steady-state tok/s?
+8. Can we disaggregate: **prefill on one pool** (capacity-optimized) and **decode on another** (latency-optimized)? If yes, what is the recommended interface (KV transfer, state format) and overhead?
+9. How should we think about **GQA/MQA** in production: are there preferred model families/configs because KV-cache bandwidth dominates decode?
+10. What are the operational constraints for **MoE** serving (routing determinism, load balance across experts, hot experts, tail behavior)?
 
 ---
 

@@ -69,6 +69,21 @@ GPU execution stack (don’t mix these):
   - shape changes can break placement,
   - “just make it bigger” often becomes “recompile / reshard / change topology.”
 
+### 1.3.1 SRAM vs DRAM (fix the taxonomy)
+
+- **CPU “memory” (server RAM) is DRAM** (DDR4/DDR5). **CPU caches are SRAM**, but that is not what people mean by “128GB system memory.”
+- **GPU has SRAM on-die** (registers, shared memory/scratchpad, L1/L2 and other buffers), but **GPU main memory is DRAM**:
+  - **HBM** (HBM2e/HBM3/HBM3E) is stacked DRAM with a very wide interface.
+  - **GDDR** is also DRAM, packaged/signaled differently than DDR DIMMs.
+- **“Is HBM3E a type of DDR?”** Both are DRAM families, but “DDR” usually means commodity CPU DIMM interfaces; HBM is packaged/specified very differently.
+- **Why SRAM is hard to scale:** SRAM is fast but low-density and expensive per bit versus DRAM, so “a lot of SRAM” quickly becomes a silicon area/power problem.
+
+### 1.3.2 Low-batch decode: why SRAM-first deterministic engines show up
+
+- **Decode at low batch** means small effective batch size (often ≈1 per user stream). It does *not* mean “no parallelism,” but it does mean you can’t lean on large, latency-hiding batches the way GPU serving often does.
+- **Inference:** At low batch, **decode can become KV-cache latency/bandwidth bound**; batching can’t hide those stalls, so memory behavior dominates TTFT/streaming latency.
+- **Inference (Groq-like decode thesis):** A compiler-scheduled, SRAM-first pipeline can reduce per-token latency and variance by keeping the hot working set close to compute and distributing the token step across a deterministic, multi-chip schedule.
+
 **Design rule:** When you ask “can this model run,” you are asking:
 
 - can it be placed given SRAM capacity,
@@ -224,6 +239,36 @@ GPU saturation often means “SM occupancy + memory bandwidth + kernel overlap,�
 - beyond that, you only add queueing delay (SLO death), not throughput.
 
 **Decision heuristic:** Tune admission to keep utilization below the knee where p99 explodes (see Tier 02).
+
+### 4.4 KV cache, attention heads, and why GQA/MQA matters (long-context + decode)
+
+This is the concrete bridge between model architecture and “why low-batch decode is hard.”
+
+- **Model width (`d_model`, hidden size)** is the per-token feature dimension; it is *not* context length (`seq_len`).
+- **Multi-head attention (MHA)** splits width into heads: `d_head = d_model / n_heads`. Each head has its own learned projections:
+  - `Q_h = X · Wq_h`, `K_h = X · Wk_h`, `V_h = X · Wv_h`
+- During decode, you store past `K` and `V` (the **KV cache**). KV cache scales with context length, and (in standard MHA) with the number of heads.
+
+**Why different K/V per head?** Because each head is a separate learned projection; multiple heads let the model run multiple “lookup subspaces” in parallel (not perfectly interpretable, but empirically useful).
+
+**Is “more heads always better”?** No. For fixed `d_model`, more heads means smaller `d_head` (less capacity per head) plus more KV/cache bookkeeping; head count is a training-time trade-off.
+
+**Toy numeric example (dimensions):** If `d_model=8` and `n_heads=2`, then `d_head=4`. Standard MHA stores `K,V` for both heads for each past token. With **GQA**, you can keep many query heads but use fewer KV heads (`n_kv_heads << n_heads`), shrinking KV cache roughly by `n_heads / n_kv_heads`. With **MQA**, `n_kv_heads=1`.
+
+**Why this matters for Groq-like SRAM engines:** Shrinking KV cache reduces memory capacity and bandwidth per token, making low-batch decode less memory-bound and easier to keep in fast memory (SRAM) with predictable service time.
+
+**Quick self-check:**
+
+1) If you double `n_heads` but keep `d_model` fixed, what happens to `d_head`?  
+2) What grows KV cache faster: `seq_len` or `n_heads`?  
+3) What does GQA reduce: queries, or keys/values?
+
+Expected: (1) `d_head` halves; (2) both matter, but `seq_len` is the “silent killer” for long-context; (3) keys/values (KV heads), not queries.
+
+### 4.5 “Do we need to design for each LLM?” (what “design” means on Groq)
+
+- You don’t redesign silicon per model, but you *do* produce a distinct compiled artifact per `(model × bucket × batch/concurrency × topology × compiler version)`; in practice that’s “designing the schedule” per model + regime.
+- **Concrete SLM example (conceptual):** a ~1–3B transformer with GQA compiled for `max_seq_len=4k` and batch-1 decode; if it doesn’t fit the SRAM/bandwidth envelope on one chip, the compiler places a deterministic pipeline across multiple LPUs/chips.
 
 ---
 

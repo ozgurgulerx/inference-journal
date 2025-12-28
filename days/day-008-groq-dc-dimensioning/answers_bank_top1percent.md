@@ -613,3 +613,55 @@ This file is designed for live meetings. Each question includes:
 - Deep: Runbooks per failure domain; rapid traffic shedding; artifact rollback.
 - Red flags: “We can’t attribute latency spikes.”
 - Close: Approve incident taxonomy and runbooks.
+
+---
+
+## Appendix — Memory + Attention + MoE (High-Leverage Q&A)
+
+1) **“Is CPU memory SRAM? Is HBM3E ‘DDR’?”**
+
+- One-liner: Server RAM is DRAM (DDR); CPU caches are SRAM; HBM3E is DRAM, not DDR DIMM memory.
+- 90s: People conflate “memory” with “cache.” CPUs have SRAM caches (fast, small) but their main memory is DDR DRAM (big, slower). GPUs have SRAM on die (registers/shared/L2) but main memory is typically HBM (stacked DRAM) or GDDR (DRAM). HBM3E is a *generation of HBM*; it’s DRAM with different packaging/interface than DDR DIMMs.
+- Deep: This distinction matters because Groq-style designs are “SRAM-first” (fast, capacity constrained) while GPU designs are “DRAM-first” (HBM/GDDR capacity + bandwidth, with caches as SRAM buffers).
+- Red flags: “CPU RAM is SRAM.”
+- Close: Align terminology: SRAM = on-chip; DRAM = main memory (DDR/GDDR/HBM).
+
+2) **“What does ‘low-batch decode’ actually mean?”**
+
+- One-liner: Small effective batch (often 1 per stream) where you can’t hide KV-cache stalls behind batching.
+- 90s: Decode is token-by-token and inherently latency sensitive. GPUs often use batching/microbatching to amortize overhead and hide memory latency; at low batch you lose that lever, and KV-cache read bandwidth/latency can dominate.
+- Deep: The key design question becomes: how do we keep the KV working set close, predictable, and bandwidth-sufficient per token?
+- Red flags: “Low batch means no parallelism.”
+- Close: Decide whether we optimize for TTFT/p99 (low batch) vs throughput/$ (high batch).
+
+3) **“Why does Groq win on low-batch decode (conceptually)?”**
+
+- One-liner: Compiler-scheduled deterministic pipelines + SRAM-first working set reduce per-token variance and stalls.
+- 90s: Instead of relying on runtime schedulers/caches to ‘probably’ keep things fast, Groq-like architectures compile a schedule that places tensors and plans data movement. SRAM-first designs can deliver very high effective bandwidth/low latency for the hot decode path.
+- Deep: The operational cost is shape discipline + artifact management; the benefit is predictable service time and lower tail.
+- Red flags: “It’s just a faster GPU.”
+- Close: Commit to bucketing + compilation CI as first-class infra.
+
+4) **“What is GQA/MQA and why does it matter for inference?”**
+
+- One-liner: Fewer KV heads shrinks KV cache and reduces decode memory bandwidth.
+- 90s: In standard multi-head attention, each head has its own K/V cache, so KV grows with context length and head count. GQA keeps many query heads but uses fewer KV heads, so the KV cache is smaller by roughly `n_heads / n_kv_heads`. MQA is the extreme with one KV head.
+- Deep: Smaller KV cache helps both GPUs and SRAM-first designs because decode is often KV-bandwidth dominated.
+- Red flags: “GQA is a Groq-only feature.”
+- Close: Prefer models trained with GQA/MQA when latency decode is the business goal.
+
+5) **“How do Groq-like systems handle MoE models?”**
+
+- One-liner: MoE adds routing irregularity; you need constraints that preserve a stable schedule and load balance.
+- 90s: Serving MoE requires gating and routing tokens to experts; the hard part is preventing hot experts and avoiding data-dependent all-to-all on the critical path. Deterministic systems may need constrained routing patterns and explicit expert placement.
+- Deep: Ask for worst-case routing envelopes, scheduling strategy, and tail behavior under skew.
+- Red flags: “MoE behaves like dense.”
+- Close: Decide whether MoE is in-scope for v1, and what constraints you enforce.
+
+6) **“What are the downsides of Groq (and what does it have to do with GQA/MoE)?”**
+
+- One-liner: Lower flexibility: shape discipline, compilation ops, capacity constraints; irregular models (MoE, ragged shapes) can be harder.
+- 90s: You trade GPU generality (runtime tactics, opportunistic batching, broad op coverage) for deterministic schedules. That means more up-front artifact work, stricter shape contracts, and sometimes less tolerance for dynamic/irregular patterns. GQA/MQA *help* because they shrink KV, making SRAM/bandwidth constraints easier; MoE can *hurt* because routing can fight static schedules.
+- Deep: The economic trade is: pay in operational discipline and silicon specialization to buy predictable low-latency decode.
+- Red flags: “We can treat it like a GPU and change batch/seq anytime.”
+- Close: Decide the product contract (buckets/caps) and whether MoE is supported under strict constraints.

@@ -234,3 +234,63 @@ You can defend:
 - a queueing + admission policy that bounds p99,
 - a failure-domain-aware redundancy plan,
 - a cross-rack scaling position (allowed vs forbidden, with rationale).
+
+---
+
+## 9) MoE workloads (why they’re trickier for deterministic schedules)
+
+MoE changes each layer’s MLP from “always run the same weights” to “route each token to a subset of experts.”
+
+- **Inference:** The MoE risk isn’t the math; it’s **routing irregularity**:
+  - hot experts (load imbalance) can create tails,
+  - expert routing can create all-to-all style communication in multi-device settings,
+  - the expert set per token is data-dependent (harder to statically schedule).
+- **Assumption to validate (Groq specifics):** Whether MoE is supported by constraining routing patterns/top-k and compiling deterministic expert placement + comm.
+
+Meeting questions:
+
+- What is the stable service-curve contract for MoE (worst-case vs typical routing)?
+- How do you prevent hot experts from dominating p99?
+- What is the multi-chip communication pattern on the critical path per token?
+
+---
+
+## 10) Daily Pulse — Prefill/Decode Disaggregation + Memory Economics + ASIC Strategy
+
+### 10.1 Disaggregation is an “HBM budget optimizer” (deep but simple)
+
+- **Prefill** wants **capacity** (big contexts; lots of KV written).
+- **Decode** wants **low latency + bandwidth**; at low batch you can’t hide memory stalls behind batching the way GPUs often do.
+
+**Inference:** Splitting inference into **prefill vs decode** lets you spend expensive bandwidth memory (HBM-like) only where it buys user-perceived latency, and serve decode with a different hardware point optimized for KV-heavy, low-batch behavior.
+
+### 10.2 Groq-style SRAM decode thesis (why it exists)
+
+- **Inference:** A compiler-scheduled, SRAM-first decode engine lets you reserve HBM-heavy GPUs for regimes where they dominate (training, high-batch inference, heavy prefill) and push low-batch, latency-sensitive decode to an SRAM-first deterministic pipeline.
+- Even if SRAM is expensive per bit, the bet is that it buys **very high effective bandwidth/low latency** where decode is KV-cache dominated.
+
+### 10.3 “Rubin / Rubin CPX / Rubin SRAM” (third-party thesis; capture without claiming)
+
+Treat the following as **Assumption to validate** (until NVIDIA product docs confirm):
+
+- “Rubin CPX” (GDDR DRAM) as capacity-optimized prefill hardware (massive context windows, lower bandwidth).
+- “Rubin” (HBM DRAM) as balanced training + high-density/batched inference.
+- A Groq-derived “Rubin SRAM” as ultra-low-latency decode hardware (agentic/reasoning), with prefill likely on CPX or standard Rubin.
+
+### 10.4 Lossless distillation → ultra-dense distillation
+
+**Dense (lossless) paragraph:** Inference is splitting into prefill and decode: prefill/context building wants memory capacity (often cheaper/denser per $), while decode wants low latency + bandwidth and, at low batch, cannot hide memory stalls behind batching like GPUs, so decode becomes KV-cache-latency/bandwidth dominated. Disaggregation therefore acts as an “HBM budget optimizer”: reserve expensive HBM-heavy GPUs for regimes where they dominate and push low-batch decode to SRAM-first deterministic pipelines where a compiler schedules a distributed on-chip SRAM working set, trading capacity for extremely high effective bandwidth and predictable service time.
+
+**Ultra-dense (still lossless) paragraph:** Prefill is capacity-hungry; decode is low-batch KV-cache-latency/bandwidth-hungry; disaggregate to spend HBM only where it wins, and use SRAM-first deterministic pipelines for latency decode because batching can’t hide stalls there.
+
+### 10.5 Open questions (record, don’t guess)
+
+- Who is **Jay Y. Lee** (Samsung leadership context), and what is his education/background? *(Research TODO; cite sources before asserting.)*
+- How are recent **DRAM/HBM price cycles** influencing GPU BOM and the incentive to add SRAM-first decode SKUs? *(Hypothesis: HBM price pressure increases value of disaggregation.)*
+
+### 10.6 How to learn to make inferences like this (repeatable method)
+
+- Build a bottleneck model per phase (prefill vs decode): compute vs memory vs comm, especially at low batch.
+- Translate claims into primitives: KV bytes/token, bandwidth needs, latency budget, utilization knee, queueing sensitivity.
+- Track memory roadmaps (DDR/GDDR/HBM) as first-class constraints (capacity, bandwidth, supply, cost).
+- Separate **Fact vs Inference vs Assumption**, and keep a falsification checklist.
