@@ -193,22 +193,26 @@ Block Hash = hash(token_content + preceding_prefix_hash)
 ## G) Reading List (Off-Hours)
 
 1. **vLLM Design Doc – PagedAttention**
+   - https://docs.vllm.ai/en/stable/design/paged_attention/
    - Understand blocks, warps, and attention kernel design
    - Key: vLLM organizes KV cache into fixed-size blocks (16/32 tokens)
 
 2. **vLLM Design Doc – Automatic Prefix Caching**
+   - https://docs.vllm.ai/en/stable/design/prefix_caching/
    - How prefix caching works with block hashes
    - Critical: "Only full blocks are cached"
 
 3. **Inside vLLM: Anatomy of a High-Throughput LLM Inference System** (Aleksa Gordić)
+   - https://www.aleksagordic.com/blog/vllm
    - Architecture overview, KV cache manager, scheduler
    - Confirms default block size (16) and CUDA graphs usage
 
 4. **GitHub Issues on vLLM**
+   - https://github.com/vllm-project/vllm/issues
    - Why prefix sharing fails if single token differs
    - GPU blocks vs max_seq_len relationship
 
 5. **vLLM Source Code** (targeted reading)
+   - https://github.com/vllm-project/vllm
    - `block_table.py`: Block allocation logic
    - `prefix_caching.py`: Hash computation for prefix reuse
-
