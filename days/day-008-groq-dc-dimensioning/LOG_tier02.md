@@ -4,6 +4,72 @@ This tier converts Groq determinism into: tokens/s math, admission control, head
 
 ---
 
+## 0) Latency Percentiles (p50/p95/p99) — What You’re Actually Talking About
+
+These are **latency percentiles**. They tell you how fast the system is for *most* requests, and how bad the *tail* gets.
+
+### 0.1 What p50 / p95 / p99 mean
+
+Take a big list of request latencies, sort them, and pick a cutoff:
+
+- **p50 (median):** 50% of requests are faster than this. “Typical user experience.”
+- **p95:** 95% faster than this, 5% slower. “Mostly good, occasional slow.”
+- **p99:** 99% faster than this, 1% slower. “Tail pain / worst noticeable.”
+- **p99.9:** “Rare disasters.” In production this can dominate incident perception.
+
+Example: if **p95 = 800ms**, then **1 in 20** requests takes **>800ms**.
+
+### 0.2 Why inference people care (more than averages)
+
+- **Mean/average latency lies** when you have queueing, batch effects, cache misses, GPU contention, or long-context outliers.
+- LLM serving is often **tail-heavy**: a small fraction of requests (long context, long generation, cold start, KV-cache pressure, migration, GC, page faults) blow up latencies.
+
+### 0.3 How to interpret percentiles in LLM serving
+
+Latency often splits into phases; percentiles capture different failure modes:
+
+- **p50** tracks the “happy path”: warmed model, stable batching, short prompts.
+- **p95** is where **capacity + queueing** starts showing: bursts, concurrency spikes, imperfect batching.
+- **p99** often screams **pathological outliers**:
+  - very long prompts (prefill spike),
+  - long generations (decode time),
+  - KV-cache eviction/offload stalls,
+  - routing to a loaded GPU,
+  - autoscaling / cold starts,
+  - host-memory pressure / page faults.
+
+### 0.4 Percentiles + SLOs (what you actually promise)
+
+Teams usually set **SLOs** like:
+
+- “**p95 < 1.5s**” for end-to-end latency, or
+- “**TTFT p95 < 300ms**” for streaming apps,
+
+because users notice the tail more than the median.
+
+### 0.5 Streaming nuance (LLMs aren’t one latency)
+
+For chat/streaming you track at least:
+
+- **TTFT (time-to-first-token)** percentiles: user-perceived responsiveness (queue + prefill).
+- **TPOT / inter-token latency** percentiles: smoothness once streaming (decode + scheduling).
+- **E2E latency** percentiles: full completion time (depends heavily on output length).
+
+It’s common to have great **p50 TTFT** but ugly **p99 TTFT** due to queueing bursts.
+
+### 0.6 Quick mental math: why p99 matters at scale
+
+- 100 QPS ⇒ 1% slow = **1 slow request/sec**
+- 1000 QPS ⇒ 0.1% slow = **1 slow request/sec**
+
+### 0.7 Practical advice for inference reporting
+
+Always report percentiles **alongside load**:
+
+- QPS, concurrency, GPU/LPU utilization, queue depth, batch size
+
+Percentiles without load context are meaningless.
+
 ## 0) The Only Two Latency Sources You Own
 
 For a single request:

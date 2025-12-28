@@ -18,6 +18,8 @@
 
 **LPU:** Groq’s Language Processing Unit; treated here as a compiler-scheduled deterministic compute engine optimized for inference.
 
+**Percentile latency (p50/p95/p99/p99.9):** A cutoff on the sorted latency distribution: p50 is the median (“typical”), p95 means 5% slower, p99 means 1% slower (“tail pain”), and p99.9 captures rare disasters that often dominate incident perception at scale.
+
 **GroqWare:** Groq’s software/tooling suite (vendor term); treat the official Groq documentation as the source of truth for components and support boundaries.
 
 **GroqFlow:** Groq’s model import/compile workflow/tooling (vendor term); in this playbook, it is the place you get: compilation, artifact metadata, and (ideally) performance reports.
@@ -61,6 +63,8 @@
 **SLO:** Service Level Objective; the target percentile(s) for latency/availability (e.g., p99 < 300ms).
 
 **TTFT:** Time To First Token; must be defined precisely (does it include queueing? prefill? network?).
+
+**TPOT (inter-token latency):** Time per generated token once streaming has started; a “smoothness” metric dominated by decode + scheduling effects.
 
 **TruePoint:** A Groq vendor term for a numeric format/approach described in some Groq materials; do not assume details—confirm the exact precision/accumulation/rounding behavior for your SKU and compiler version before using it in accuracy-critical claims.
 
