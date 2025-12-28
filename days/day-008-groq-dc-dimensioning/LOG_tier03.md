@@ -294,3 +294,50 @@ Treat the following as **Assumption to validate** (until NVIDIA product docs con
 - Translate claims into primitives: KV bytes/token, bandwidth needs, latency budget, utilization knee, queueing sensitivity.
 - Track memory roadmaps (DDR/GDDR/HBM) as first-class constraints (capacity, bandwidth, supply, cost).
 - Separate **Fact vs Inference vs Assumption**, and keep a falsification checklist.
+
+### 10.7 Nvidia ↔ Groq “license + hire” deal (strategic analysis, distilled)
+
+Treat this entire subsection as **Assumption to validate** until you pin primary sources (e.g., Reuters / Nvidia IR / Groq announcement). Use it as a reasoning scaffold, not a citation.
+
+**Reported facts (to validate):**
+
+- Nvidia hired Groq’s founding leadership team and licensed Groq technology, rather than acquiring the whole company.
+- Groq (founded 2016; Jonathan Ross) built an inference-first LPU with a deterministic, compiler-first execution model and large on-chip SRAM, optimized for low-latency inference.
+- Reported performance claims cite materially higher token/s on some LLMs vs typical GPU serving, with the trade-off that SRAM-centric designs constrain per-chip model size.
+- Industry framing: by ~2025 inference spend overtakes training spend (“inference flip”), making inference latency and efficiency a first-class battleground.
+
+**Why “license + hire” instead of acquisition (inference):**
+
+- **Antitrust optics:** “Non-exclusive license + hiring” can move fast while avoiding the most obvious M&A review triggers.
+- **Get the hard part:** the scarce asset is the *team* (compiler + architecture co-design) plus the IP, not the operating company (cloud service, contracts, liabilities).
+- **Integration simplicity:** Nvidia can focus on productizing the tech inside its own platform without inheriting Groq’s business.
+- **Industry trend:** 2024–2025 sees multiple “quasi-acqui-hire” deals (license + hire / minority stake + talent move) as regulatory pressure rises.
+
+**Technical/portfolio logic (connects directly to Section 10.1):**
+
+- Decode at low batch is often KV-cache-memory dominated; GPUs often hide stalls behind batching, but that lever collapses in interactive regimes.
+- A Groq-like deterministic SRAM-first engine creates a separate cost/perf point for low-batch decode, letting Nvidia reserve HBM-heavy GPUs for training, batched inference, and heavy prefill.
+- If memory supply/pricing (HBM packaging, CoWoS, DRAM cycles) is a constraint, SRAM-first decode engines reduce dependence on external HBM for certain latency SKUs.
+
+**Competitive impact (likely second-order effects):**
+
+- Neutralizes a credible inference-specialist startup and imports its “design fork” into Nvidia’s roadmap.
+- Raises pressure on AMD/Intel inference positioning (latency + TCO narratives), and on hyperscaler in-house silicon differentiation.
+- Accelerates market consolidation dynamics: startups either partner, niche down, or get “licensed + hired.”
+
+**Capital markets narrative (to validate, but useful to model):**
+
+- Investors interpret the move as Nvidia defending the next profit pool (inference) and reinforcing pricing power via a “one-vendor AI factory” stack (training + inference + networking + software).
+- Big up-front IP/talent spend can be framed as buying time: pre-empt competitors from acquiring the same capability, and shorten product lead time vs organic replication.
+
+**Risks / wildcards (don’t hand-wave):**
+
+- Regulatory: scrutiny can expand from formal M&A to “quasi-acquisitions.”
+- Integration: deterministic compiler-first designs can be hard to merge into existing CUDA/TensorRT workflows without fracturing developer experience.
+- Real-world perf: headline token/s claims can fail to translate under real traffic mix (ragged shapes, long context, multi-tenant interference, networking).
+
+**Evidence TODOs (pin before repeating externally):**
+
+- Confirm deal structure (license terms, exclusivity, hired roles) and any reported payment numbers from primary sources.
+- Confirm Groq architecture claims (SRAM capacity, determinism boundary) from Groq primary papers/posts.
+- Validate any throughput/token/s figures on the exact models, batch regimes, and measurement methodology.
