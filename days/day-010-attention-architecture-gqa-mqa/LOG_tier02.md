@@ -29,6 +29,27 @@
 
 **Time**: 20 min
 
+### 1.0 Prerequisites & Installation
+
+Before starting, ensure you have the required packages installed:
+
+```bash
+# Create/activate virtual environment (recommended)
+python -m venv venv && source venv/bin/activate
+
+# Install required packages
+pip install vllm>=0.5.0 transformers torch
+
+# Verify installation
+python -c "import vllm; print(f'vLLM version: {vllm.__version__}')"
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+```
+
+**vLLM version notes**:
+- v0.5.0+: Stable GQA support, recommended for these exercises
+- v0.6.0+: Improved prefix caching, better memory efficiency
+- Always check [vLLM releases](https://github.com/vllm-project/vllm/releases) for compatibility
+
 ### 1.1 Create Day 10 Directory Structure
 
 ```bash
@@ -162,15 +183,25 @@ class ModelConfig:
 
 # Pre-defined model configs
 MODELS = {
+    # Llama family
     "llama2-7b": ModelConfig("Llama-2-7B", n_layers=32, n_heads=32, n_kv_heads=32, d_head=128),
     "llama2-70b": ModelConfig("Llama-2-70B", n_layers=80, n_heads=64, n_kv_heads=8, d_head=128),
     "llama3-8b": ModelConfig("Llama-3-8B", n_layers=32, n_heads=32, n_kv_heads=8, d_head=128),
     "llama3-70b": ModelConfig("Llama-3-70B", n_layers=80, n_heads=64, n_kv_heads=8, d_head=128),
+    "llama3.1-8b": ModelConfig("Llama-3.1-8B", n_layers=32, n_heads=32, n_kv_heads=8, d_head=128),
+    "llama3.1-70b": ModelConfig("Llama-3.1-70B", n_layers=80, n_heads=64, n_kv_heads=8, d_head=128),
+    "llama3.2-3b": ModelConfig("Llama-3.2-3B", n_layers=28, n_heads=24, n_kv_heads=8, d_head=128),
+    # Mistral family (note: SWA capped at 4096 for Mistral-7B)
     "mistral-7b": ModelConfig("Mistral-7B", n_layers=32, n_heads=32, n_kv_heads=8, d_head=128),
+    "mistral-large": ModelConfig("Mistral-Large", n_layers=88, n_heads=96, n_kv_heads=8, d_head=128),
     "mixtral-8x7b": ModelConfig("Mixtral-8x7B", n_layers=32, n_heads=32, n_kv_heads=8, d_head=128),
+    # Qwen family
     "qwen25-1.5b": ModelConfig("Qwen2.5-1.5B", n_layers=28, n_heads=12, n_kv_heads=2, d_head=128),
     "qwen25-7b": ModelConfig("Qwen2.5-7B", n_layers=28, n_heads=28, n_kv_heads=4, d_head=128),
+    "qwen25-72b": ModelConfig("Qwen2.5-72B", n_layers=80, n_heads=64, n_kv_heads=8, d_head=128),
+    # Other architectures
     "falcon-7b": ModelConfig("Falcon-7B", n_layers=32, n_heads=71, n_kv_heads=1, d_head=64),
+    "gemma2-9b": ModelConfig("Gemma-2-9B", n_layers=42, n_heads=16, n_kv_heads=8, d_head=256),
 }
 
 
@@ -1321,6 +1352,592 @@ mistralai/Mistral-7B-v0.1
 
 ---
 
+## Bonus Microtask: Sliding Window Attention (SWA) Exploration
+
+**Objective**: Understand and measure Mistral's Sliding Window Attention behavior.
+
+**Time**: 25 min (optional)
+
+### B.1 Enhanced Fingerprint with SWA Detection
+
+```bash
+cat > scripts/arch_fingerprint_extended.py << 'EOF'
+#!/usr/bin/env python3
+"""
+Extended fingerprint including SWA and other advanced attention features.
+"""
+
+import argparse
+import json
+from transformers import AutoConfig
+
+
+def fingerprint_extended(model_id: str) -> dict:
+    """Extract attention architecture including SWA, MoE indicators."""
+    config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+
+    # Base attention params
+    n_heads = getattr(config, 'num_attention_heads', None)
+    n_kv_heads = getattr(config, 'num_key_value_heads', n_heads)
+    n_layers = getattr(config, 'num_hidden_layers', None)
+    hidden_size = getattr(config, 'hidden_size', None)
+    head_dim = hidden_size // n_heads if hidden_size and n_heads else None
+
+    # Sliding Window Attention
+    sliding_window = getattr(config, 'sliding_window', None)
+
+    # MoE indicators
+    num_experts = getattr(config, 'num_local_experts', None) or getattr(config, 'num_experts', None)
+    num_experts_per_tok = getattr(config, 'num_experts_per_tok', None)
+
+    # Attention type
+    if n_heads and n_kv_heads:
+        if n_kv_heads == n_heads:
+            attn_type = "MHA"
+        elif n_kv_heads == 1:
+            attn_type = "MQA"
+        else:
+            attn_type = f"GQA-{n_heads // n_kv_heads}"
+    else:
+        attn_type = "Unknown"
+
+    return {
+        "model_id": model_id,
+        "architecture": getattr(config, 'architectures', ['Unknown'])[0],
+        "attention_type": attn_type,
+        "num_attention_heads": n_heads,
+        "num_key_value_heads": n_kv_heads,
+        "num_hidden_layers": n_layers,
+        "hidden_size": hidden_size,
+        "head_dim": head_dim,
+        "kv_reduction_factor": n_heads / n_kv_heads if n_heads and n_kv_heads else 1.0,
+        "sliding_window": sliding_window,
+        "is_moe": num_experts is not None,
+        "num_experts": num_experts,
+        "num_experts_per_tok": num_experts_per_tok,
+        "max_position_embeddings": getattr(config, 'max_position_embeddings', None),
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("models", nargs="+")
+    parser.add_argument("--output", type=str)
+    args = parser.parse_args()
+
+    results = []
+    print("\n" + "="*80)
+    print("Extended Model Architecture Fingerprints")
+    print("="*80)
+
+    for model_id in args.models:
+        try:
+            fp = fingerprint_extended(model_id)
+            results.append(fp)
+
+            print(f"\n{model_id}")
+            print(f"  Attention: {fp['attention_type']} (heads={fp['num_attention_heads']}, kv_heads={fp['num_key_value_heads']})")
+            print(f"  KV Reduction: {fp['kv_reduction_factor']:.1f}×")
+
+            if fp['sliding_window']:
+                print(f"  Sliding Window: {fp['sliding_window']} tokens ★")
+
+            if fp['is_moe']:
+                print(f"  MoE: {fp['num_experts']} experts, {fp['num_experts_per_tok']} active/token ★")
+
+        except Exception as e:
+            print(f"\n{model_id}: Error - {e}")
+
+    print("\n" + "="*80)
+
+    if args.output:
+        with open(args.output, 'w') as f:
+            json.dump(results, f, indent=2)
+
+
+if __name__ == "__main__":
+    main()
+EOF
+
+chmod +x scripts/arch_fingerprint_extended.py
+```
+
+### B.2 Test SWA Detection
+
+```bash
+# Test on Mistral and Mixtral (both have SWA)
+python scripts/arch_fingerprint_extended.py \
+    "mistralai/Mistral-7B-v0.1" \
+    "mistralai/Mixtral-8x7B-v0.1" \
+    "meta-llama/Llama-3.1-8B" \
+    --output reports/extended_fingerprints.json
+```
+
+### Expected Output
+
+```
+================================================================================
+Extended Model Architecture Fingerprints
+================================================================================
+
+mistralai/Mistral-7B-v0.1
+  Attention: GQA-4 (heads=32, kv_heads=8)
+  KV Reduction: 4.0×
+  Sliding Window: 4096 tokens ★
+
+mistralai/Mixtral-8x7B-v0.1
+  Attention: GQA-4 (heads=32, kv_heads=8)
+  KV Reduction: 4.0×
+  Sliding Window: 4096 tokens ★
+  MoE: 8 experts, 2 active/token ★
+
+meta-llama/Llama-3.1-8B
+  Attention: GQA-4 (heads=32, kv_heads=8)
+  KV Reduction: 4.0×
+```
+
+### B.3 SWA Memory Implications
+
+With Sliding Window Attention, KV cache is bounded:
+
+```python
+# Standard: KV grows with sequence length
+kv_standard = 2 * n_layers * n_kv_heads * d_head * seq_len * dtype_bytes
+
+# SWA: KV capped at window size
+kv_swa = 2 * n_layers * n_kv_heads * d_head * min(seq_len, window) * dtype_bytes
+
+# Example: Mistral-7B with 32K input
+# Without SWA: 512 MB × (32K / 4K) = 4 GB
+# With SWA (4K window): 512 MB (constant!)
+```
+
+### Success Criteria
+- [ ] Extended fingerprint detects sliding_window
+- [ ] MoE models correctly identified
+- [ ] Understand SWA memory implications
+
+---
+
+## RunPod Cloud GPU Exercises
+
+> **These exercises validate Day 10 concepts with real cloud billing data.**
+> Budget: ~$5-15 total for all exercises.
+
+### RunPod Setup
+
+Before running these exercises, set up your RunPod environment:
+
+```bash
+# 1. Create RunPod account at https://runpod.io
+# 2. Add credits ($10-20 recommended for all exercises)
+# 3. Create API key: Settings → API Keys → Create
+
+# 4. Set environment variables
+export RUNPOD_API_KEY="your_api_key_here"
+
+# 5. Install RunPod SDK
+pip install runpod openai aiohttp
+
+# 6. Verify connection
+python -c "import runpod; print(runpod.get_pods())"
+```
+
+**Recommended GPU tiers**:
+- **L4** ($0.44/hr): Budget-friendly, good for 7B models
+- **A10G** ($0.69/hr): Better throughput, 24GB VRAM
+- **A100** ($1.99/hr): Production testing, 80GB VRAM
+
+---
+
+## Bonus B2: GQA Cost Savings Validation (RunPod)
+
+**Objective**: Prove that GQA reduces cloud costs by measuring actual RunPod billing.
+
+**Time**: 45 min | **Budget**: ~$2-3
+
+### B2.1 Deploy Endpoints
+
+Deploy two serverless endpoints on RunPod:
+
+1. **MHA-equivalent**: `meta-llama/Llama-2-7b-chat-hf` (n_kv_heads=32)
+2. **GQA model**: `mistralai/Mistral-7B-Instruct-v0.2` (n_kv_heads=8)
+
+Use the same GPU tier (A10G recommended) for fair comparison.
+
+### B2.2 Create Cost Benchmark Script
+
+```bash
+cat > scripts/runpod_cost_bench.py << 'EOF'
+#!/usr/bin/env python3
+"""
+RunPod Cost Benchmark: Compare GQA vs MHA-equivalent models.
+Measures actual execution time and calculates cost difference.
+"""
+
+import argparse
+import asyncio
+import json
+import time
+from datetime import datetime
+from openai import AsyncOpenAI
+
+
+async def run_benchmark(
+    endpoint_url: str,
+    api_key: str,
+    n_requests: int = 50,
+    max_tokens: int = 128,
+    model_name: str = "model"
+) -> dict:
+    """Run benchmark and measure timing."""
+
+    client = AsyncOpenAI(
+        base_url=f"{endpoint_url}/v1",
+        api_key=api_key,
+    )
+
+    prompts = [
+        f"Explain concept {i} about machine learning in detail."
+        for i in range(n_requests)
+    ]
+
+    print(f"\n[{model_name}] Starting {n_requests} requests...")
+
+    start_time = time.perf_counter()
+
+    # Run requests concurrently in batches
+    batch_size = 10
+    total_tokens = 0
+
+    for i in range(0, len(prompts), batch_size):
+        batch = prompts[i:i+batch_size]
+        tasks = [
+            client.chat.completions.create(
+                model="default",
+                messages=[{"role": "user", "content": p}],
+                max_tokens=max_tokens,
+                temperature=0.7,
+            )
+            for p in batch
+        ]
+        responses = await asyncio.gather(*tasks)
+        total_tokens += sum(r.usage.completion_tokens for r in responses)
+        print(f"  Completed {min(i+batch_size, len(prompts))}/{n_requests}")
+
+    end_time = time.perf_counter()
+    wall_time = end_time - start_time
+
+    return {
+        "model_name": model_name,
+        "endpoint_url": endpoint_url,
+        "n_requests": n_requests,
+        "max_tokens": max_tokens,
+        "total_output_tokens": total_tokens,
+        "wall_time_seconds": round(wall_time, 2),
+        "throughput_tok_s": round(total_tokens / wall_time, 2),
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+def calculate_costs(results: list, gpu_cost_per_hour: float) -> list:
+    """Add cost calculations to results."""
+    for r in results:
+        gpu_seconds = r["wall_time_seconds"]
+        r["gpu_cost_usd"] = round(gpu_seconds * (gpu_cost_per_hour / 3600), 4)
+        r["cost_per_1k_tokens"] = round(
+            (r["gpu_cost_usd"] / r["total_output_tokens"]) * 1000, 6
+        ) if r["total_output_tokens"] > 0 else 0
+    return results
+
+
+async def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--endpoint-a", required=True, help="First endpoint URL")
+    parser.add_argument("--endpoint-b", required=True, help="Second endpoint URL")
+    parser.add_argument("--api-key", required=True, help="RunPod API key")
+    parser.add_argument("--name-a", default="Model-A", help="Name for first model")
+    parser.add_argument("--name-b", default="Model-B", help="Name for second model")
+    parser.add_argument("--n-requests", type=int, default=50)
+    parser.add_argument("--max-tokens", type=int, default=128)
+    parser.add_argument("--gpu-cost", type=float, default=0.69, help="GPU $/hour")
+    parser.add_argument("--output", type=str, default="reports/runpod_cost_comparison.json")
+    args = parser.parse_args()
+
+    results = []
+
+    # Benchmark Model A
+    result_a = await run_benchmark(
+        args.endpoint_a, args.api_key,
+        args.n_requests, args.max_tokens, args.name_a
+    )
+    results.append(result_a)
+
+    # Benchmark Model B
+    result_b = await run_benchmark(
+        args.endpoint_b, args.api_key,
+        args.n_requests, args.max_tokens, args.name_b
+    )
+    results.append(result_b)
+
+    # Calculate costs
+    results = calculate_costs(results, args.gpu_cost)
+
+    # Print comparison
+    print("\n" + "="*70)
+    print("RunPod Cost Comparison: GQA vs MHA")
+    print("="*70)
+    print(f"{'Metric':<25} {args.name_a:<20} {args.name_b:<20}")
+    print("-"*70)
+    print(f"{'Wall time (s)':<25} {results[0]['wall_time_seconds']:<20} {results[1]['wall_time_seconds']:<20}")
+    print(f"{'Total tokens':<25} {results[0]['total_output_tokens']:<20} {results[1]['total_output_tokens']:<20}")
+    print(f"{'Throughput (tok/s)':<25} {results[0]['throughput_tok_s']:<20} {results[1]['throughput_tok_s']:<20}")
+    print(f"{'GPU cost ($)':<25} {results[0]['gpu_cost_usd']:<20} {results[1]['gpu_cost_usd']:<20}")
+    print(f"{'Cost per 1K tokens ($)':<25} {results[0]['cost_per_1k_tokens']:<20} {results[1]['cost_per_1k_tokens']:<20}")
+    print("="*70)
+
+    # Calculate savings
+    if results[0]['gpu_cost_usd'] > results[1]['gpu_cost_usd']:
+        savings_pct = (1 - results[1]['gpu_cost_usd'] / results[0]['gpu_cost_usd']) * 100
+        print(f"\n{args.name_b} saves {savings_pct:.1f}% vs {args.name_a}")
+    else:
+        savings_pct = (1 - results[0]['gpu_cost_usd'] / results[1]['gpu_cost_usd']) * 100
+        print(f"\n{args.name_a} saves {savings_pct:.1f}% vs {args.name_b}")
+
+    # Save results
+    with open(args.output, 'w') as f:
+        json.dump(results, f, indent=2)
+    print(f"\nResults saved to: {args.output}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+EOF
+
+chmod +x scripts/runpod_cost_bench.py
+```
+
+### B2.3 Run the Comparison
+
+```bash
+# Example: Compare Llama-2-7B (MHA) vs Mistral-7B (GQA)
+python scripts/runpod_cost_bench.py \
+    --endpoint-a "https://api.runpod.ai/v2/YOUR_LLAMA_ENDPOINT_ID" \
+    --endpoint-b "https://api.runpod.ai/v2/YOUR_MISTRAL_ENDPOINT_ID" \
+    --api-key "$RUNPOD_API_KEY" \
+    --name-a "Llama-2-7B-MHA" \
+    --name-b "Mistral-7B-GQA" \
+    --n-requests 50 \
+    --gpu-cost 0.69
+```
+
+### Expected Results
+
+```
+======================================================================
+RunPod Cost Comparison: GQA vs MHA
+======================================================================
+Metric                    Llama-2-7B-MHA       Mistral-7B-GQA
+----------------------------------------------------------------------
+Wall time (s)             45.2                 38.1
+Total tokens              6400                 6400
+Throughput (tok/s)        141.6                168.0
+GPU cost ($)              0.0087               0.0073
+Cost per 1K tokens ($)    0.001359             0.001141
+======================================================================
+
+Mistral-7B-GQA saves 16.1% vs Llama-2-7B-MHA
+```
+
+### Success Criteria
+- [ ] Both endpoints deployed and responding
+- [ ] Cost comparison completed
+- [ ] GQA model shows measurable cost savings
+- [ ] Results saved to JSON
+
+---
+
+## Bonus B3: Cold Start Analysis (RunPod)
+
+**Objective**: Measure how attention architecture affects cold start vs warm latency.
+
+**Time**: 30 min | **Budget**: ~$1-2
+
+### B3.1 Create Cold Start Probe
+
+```bash
+cat > scripts/runpod_cold_start.py << 'EOF'
+#!/usr/bin/env python3
+"""
+RunPod Cold Start Probe: Measure container startup + model load time.
+Compares cold start vs warm request latency.
+"""
+
+import argparse
+import asyncio
+import json
+import time
+from datetime import datetime
+from openai import AsyncOpenAI
+
+
+async def measure_latency(
+    client: AsyncOpenAI,
+    prompt: str = "Hello, how are you?",
+    max_tokens: int = 32,
+) -> dict:
+    """Measure single request latency with timing breakdown."""
+
+    t_start = time.perf_counter()
+
+    # Make request
+    response = await client.chat.completions.create(
+        model="default",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=max_tokens,
+        temperature=0,
+        stream=True,
+    )
+
+    t_first_token = None
+    tokens = 0
+
+    async for chunk in response:
+        if t_first_token is None and chunk.choices[0].delta.content:
+            t_first_token = time.perf_counter()
+        if chunk.choices[0].delta.content:
+            tokens += 1
+
+    t_end = time.perf_counter()
+
+    return {
+        "ttft_ms": round((t_first_token - t_start) * 1000, 2) if t_first_token else None,
+        "total_time_ms": round((t_end - t_start) * 1000, 2),
+        "tokens": tokens,
+    }
+
+
+async def cold_start_test(
+    endpoint_url: str,
+    api_key: str,
+    model_name: str,
+    wait_for_cold: int = 300,  # 5 minutes
+) -> dict:
+    """Test cold start vs warm latency."""
+
+    client = AsyncOpenAI(
+        base_url=f"{endpoint_url}/v1",
+        api_key=api_key,
+        timeout=120.0,  # Long timeout for cold start
+    )
+
+    results = {
+        "model_name": model_name,
+        "endpoint_url": endpoint_url,
+        "timestamp": datetime.now().isoformat(),
+        "measurements": [],
+    }
+
+    print(f"\n[{model_name}] Cold Start Test")
+    print("="*50)
+
+    # First request (likely cold)
+    print("Request 1 (potentially cold)...")
+    try:
+        m1 = await measure_latency(client)
+        results["measurements"].append({"type": "initial", **m1})
+        print(f"  TTFT: {m1['ttft_ms']}ms, Total: {m1['total_time_ms']}ms")
+    except Exception as e:
+        print(f"  Error: {e}")
+        results["measurements"].append({"type": "initial", "error": str(e)})
+
+    # Warm requests (immediate follow-up)
+    for i in range(3):
+        print(f"Request {i+2} (warm)...")
+        try:
+            m = await measure_latency(client)
+            results["measurements"].append({"type": "warm", **m})
+            print(f"  TTFT: {m['ttft_ms']}ms, Total: {m['total_time_ms']}ms")
+        except Exception as e:
+            print(f"  Error: {e}")
+        await asyncio.sleep(1)
+
+    # Calculate cold vs warm difference
+    initial = results["measurements"][0]
+    warm_avg = sum(
+        m["ttft_ms"] for m in results["measurements"][1:]
+        if m.get("ttft_ms")
+    ) / max(1, len([m for m in results["measurements"][1:] if m.get("ttft_ms")]))
+
+    if initial.get("ttft_ms") and warm_avg:
+        results["cold_warm_ratio"] = round(initial["ttft_ms"] / warm_avg, 2)
+        results["cold_overhead_ms"] = round(initial["ttft_ms"] - warm_avg, 2)
+        print(f"\nCold/Warm ratio: {results['cold_warm_ratio']}x")
+        print(f"Cold overhead: {results['cold_overhead_ms']}ms")
+
+    return results
+
+
+async def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--endpoint", required=True, help="RunPod endpoint URL")
+    parser.add_argument("--api-key", required=True, help="RunPod API key")
+    parser.add_argument("--name", default="Model", help="Model name for labeling")
+    parser.add_argument("--output", type=str, help="Output JSON file")
+    args = parser.parse_args()
+
+    results = await cold_start_test(
+        args.endpoint, args.api_key, args.name
+    )
+
+    if args.output:
+        with open(args.output, 'w') as f:
+            json.dump(results, f, indent=2)
+        print(f"\nResults saved to: {args.output}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+EOF
+
+chmod +x scripts/runpod_cold_start.py
+```
+
+### B3.2 Run Cold Start Tests
+
+```bash
+# Test GQA model
+python scripts/runpod_cold_start.py \
+    --endpoint "https://api.runpod.ai/v2/YOUR_MISTRAL_ENDPOINT_ID" \
+    --api-key "$RUNPOD_API_KEY" \
+    --name "Mistral-7B-GQA" \
+    --output reports/cold_start_gqa.json
+
+# Test MHA-equivalent model
+python scripts/runpod_cold_start.py \
+    --endpoint "https://api.runpod.ai/v2/YOUR_LLAMA_ENDPOINT_ID" \
+    --api-key "$RUNPOD_API_KEY" \
+    --name "Llama-2-7B-MHA" \
+    --output reports/cold_start_mha.json
+```
+
+### Expected Insights
+
+| Metric | Cold Start | Warm | Difference |
+|--------|------------|------|------------|
+| TTFT (GQA) | ~3000ms | ~200ms | 15× slower |
+| TTFT (MHA) | ~3500ms | ~220ms | 16× slower |
+
+**Key observation**: Cold start dominated by container + model load, not attention type.
+
+### Success Criteria
+- [ ] Cold start measured for at least one model
+- [ ] Warm latency baseline established
+- [ ] Cold/warm ratio documented
+- [ ] Understanding: when does cold start matter vs steady-state?
+
+---
+
 ## Tier 2 Summary
 
 | Microtask | Status | Key Finding |
@@ -1334,6 +1951,9 @@ mistralai/Mistral-7B-v0.1
 | 7. Throughput | ⬜ | Throughput compared |
 | 8. KV Stats | ⬜ | vLLM internals inspected |
 | 9. Fingerprint | ⬜ | Reusable tool created |
+| B1. SWA Exploration | ⬜ | (Optional) SWA + MoE detection |
+| B2. RunPod Cost | ⬜ | (Cloud) GQA cost savings validated |
+| B3. Cold Start | ⬜ | (Cloud) Cold vs warm latency measured |
 
 ### Artifacts Created
 
@@ -1348,7 +1968,10 @@ scripts/
 ├── concurrency_test.py
 ├── throughput_bench.py
 ├── vllm_kv_stats.py
-└── arch_fingerprint.py
+├── arch_fingerprint.py
+├── arch_fingerprint_extended.py  # Bonus: SWA + MoE detection
+├── runpod_cost_bench.py          # RunPod: cost comparison
+└── runpod_cold_start.py          # RunPod: cold start analysis
 
 logs/
 ├── memory_profile_*.json
@@ -1359,7 +1982,11 @@ reports/
 ├── seq_len_kv_scaling.csv
 ├── max_concurrency.md
 ├── throughput_comparison.csv
-└── model_fingerprints.json
+├── model_fingerprints.json
+├── extended_fingerprints.json    # Bonus: with SWA/MoE info
+├── runpod_cost_comparison.json   # RunPod: GQA vs MHA costs
+├── cold_start_gqa.json           # RunPod: cold start data
+└── cold_start_mha.json           # RunPod: cold start data
 ```
 
 ---

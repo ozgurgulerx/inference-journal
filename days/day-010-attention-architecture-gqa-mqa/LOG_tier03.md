@@ -23,6 +23,37 @@
 
 ---
 
+## Reference Measurements (Validation Baseline)
+
+> Use these reference values to validate your Tier 2 measurements. Variations of ±10-15% are normal due to vLLM version, GPU architecture, and driver differences.
+
+### Expected KV Cache Sizes (fp16, 4K context, batch=1)
+
+| Model | Attention | Theoretical KV | Typical Measured | Notes |
+|-------|-----------|----------------|------------------|-------|
+| Qwen2.5-1.5B | GQA-6 | ~58 MB | 60-70 MB | Good for limited VRAM |
+| Mistral-7B | GQA-4 | ~268 MB | 280-320 MB | +SWA caps at 4K |
+| Llama-2-7B | MHA | ~536 MB | 550-600 MB | Baseline comparison |
+| Llama-3-8B | GQA-4 | ~268 MB | 280-320 MB | Similar to Mistral |
+
+### Expected Throughput Ranges (A10G/L4, single GPU)
+
+| Model | Attention | Concurrency=1 | Concurrency=8 | Max Concurrency |
+|-------|-----------|---------------|---------------|-----------------|
+| Qwen2.5-1.5B | GQA-6 | ~200 tok/s | ~400 tok/s | 32-64 |
+| Mistral-7B | GQA-4 | ~80 tok/s | ~180 tok/s | 8-16 |
+| Llama-2-7B | MHA | ~70 tok/s | ~140 tok/s | 4-8 |
+
+### Memory Overhead Expectations
+
+- **vLLM base overhead**: ~500-800 MB (varies by version)
+- **Model weights**: Size × dtype_bytes (e.g., 7B × 2 = ~14 GB for fp16)
+- **Block allocation**: vLLM allocates in blocks; expect step-function memory usage
+
+> **If your measurements differ significantly**: See [Troubleshooting](#troubleshooting-measurement-issues) at the end of this document.
+
+---
+
 ## Microtask 10: Memory Analysis
 
 **Objective**: Analyze Tier 2 memory measurements and validate against theory.
@@ -576,10 +607,114 @@ cat > reports/quality_comparison.md << 'EOF'
 EOF
 ```
 
+### 12.4 (Optional) Automated Quality Evaluation
+
+For more objective comparison, use a simple accuracy check on verifiable questions:
+
+```bash
+cat > scripts/quality_eval_auto.py << 'EOF'
+#!/usr/bin/env python3
+"""
+Automated quality evaluation for GQA vs MHA comparison.
+Tests verifiable questions with known answers.
+"""
+
+import argparse
+import json
+from vllm import LLM, SamplingParams
+
+# Questions with verifiable answers
+EVAL_QUESTIONS = [
+    {"q": "What is 15 - 7 + 3?", "a": "11", "type": "math"},
+    {"q": "What is the capital of France?", "a": "Paris", "type": "factual"},
+    {"q": "How many sheep remain if a farmer has 17 and all but 9 run away?", "a": "9", "type": "reasoning"},
+    {"q": "Is 7 a prime number? Answer yes or no.", "a": "yes", "type": "factual"},
+    {"q": "What is 2^10?", "a": "1024", "type": "math"},
+    {"q": "Complete: The quick brown ___ jumps over the lazy dog.", "a": "fox", "type": "knowledge"},
+    {"q": "What comes after Monday?", "a": "Tuesday", "type": "sequence"},
+    {"q": "How many sides does a hexagon have?", "a": "6", "type": "factual"},
+]
+
+
+def evaluate_model(model_id: str) -> dict:
+    """Evaluate model on verifiable questions."""
+    llm = LLM(
+        model=model_id,
+        max_model_len=2048,
+        gpu_memory_utilization=0.85,
+        trust_remote_code=True,
+    )
+
+    prompts = [q["q"] + " Answer concisely." for q in EVAL_QUESTIONS]
+    outputs = llm.generate(prompts, SamplingParams(temperature=0, max_tokens=32))
+
+    correct = 0
+    results = []
+
+    for q, output in zip(EVAL_QUESTIONS, outputs):
+        response = output.outputs[0].text.strip().lower()
+        expected = q["a"].lower()
+        is_correct = expected in response
+        if is_correct:
+            correct += 1
+        results.append({
+            "question": q["q"],
+            "expected": q["a"],
+            "response": response[:100],
+            "correct": is_correct,
+            "type": q["type"],
+        })
+
+    return {
+        "model_id": model_id,
+        "score": correct,
+        "total": len(EVAL_QUESTIONS),
+        "accuracy": round(correct / len(EVAL_QUESTIONS) * 100, 1),
+        "results": results,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", required=True)
+    parser.add_argument("--output", type=str)
+    args = parser.parse_args()
+
+    result = evaluate_model(args.model)
+
+    print(f"\n{'='*50}")
+    print(f"Quality Evaluation: {args.model}")
+    print(f"{'='*50}")
+    print(f"Score: {result['score']}/{result['total']} ({result['accuracy']}%)")
+    print(f"\nDetails:")
+    for r in result['results']:
+        status = "✓" if r['correct'] else "✗"
+        print(f"  {status} [{r['type']}] {r['question'][:40]}...")
+
+    if args.output:
+        with open(args.output, 'w') as f:
+            json.dump(result, f, indent=2)
+        print(f"\nSaved to: {args.output}")
+
+
+if __name__ == "__main__":
+    main()
+EOF
+
+chmod +x scripts/quality_eval_auto.py
+
+# Run automated eval
+# python scripts/quality_eval_auto.py --model "Qwen/Qwen2.5-1.5B-Instruct" --output reports/auto_eval_qwen.json
+# python scripts/quality_eval_auto.py --model "mistralai/Mistral-7B-v0.1" --output reports/auto_eval_mistral.json
+```
+
+> **Note**: Automated eval supplements but doesn't replace manual inspection. It catches obvious regressions but misses nuanced quality differences.
+
 ### Success Criteria
 - [ ] Side-by-side outputs generated
 - [ ] Manual quality inspection completed
 - [ ] Quality report filled out
+- [ ] (Optional) Automated eval shows no major regression
 
 ---
 
@@ -663,6 +798,34 @@ GQA overhead (if any quality/latency cost):
 - Quality acceptable for: [use cases]
 - Quality NOT acceptable for: [use cases]
 - Break-even point: [X] requests/day makes GQA worth it
+
+---
+
+## RunPod Measured Costs (Cloud Validation)
+
+> Fill this section after completing Bonus B2 (RunPod Cost Savings)
+
+### Actual Cloud Benchmarks
+
+| Model | Attention | GPU | $/hour | Throughput | $/1M tokens |
+|-------|-----------|-----|--------|------------|-------------|
+| Llama-2-7B | MHA | A10G | $0.69 | [measured] | [calculated] |
+| Mistral-7B | GQA-4 | A10G | $0.69 | [measured] | [calculated] |
+
+### Measured Savings
+
+- GQA throughput advantage: [X]%
+- Cost savings per 1M tokens: $[X]
+- Monthly savings at 1B tokens: $[X]
+
+### Cloud vs Local Comparison
+
+| Metric | Local GPU | RunPod | Difference |
+|--------|-----------|--------|------------|
+| Setup time | Hours | Minutes | RunPod faster |
+| Cost model | CapEx | OpEx | RunPod flexible |
+| Cold start | None | ~3-5s | Local advantage |
+| Scalability | Fixed | Elastic | RunPod advantage |
 EOF
 ```
 
@@ -956,9 +1119,9 @@ cat > reports/selection_matrix.md << 'EOF'
 - Models: Falcon-7B (MQA), Qwen2.5 series
 
 ### 3. Long-Context Applications
-**Recommendation**: GQA (8× reduction) or MQA
-- Reason: KV cache dominates at long context
-- Models: Llama-3-70B (8× GQA), specialized long-context models
+**Recommendation**: GQA (8× reduction) + SWA if available
+- Reason: KV cache dominates at long context; SWA caps memory
+- Models: Mistral-7B (GQA + SWA), Llama-3.1-70B (GQA, 128K native)
 
 ### 4. Complex Reasoning / Code
 **Recommendation**: MHA or conservative GQA
@@ -970,14 +1133,28 @@ cat > reports/selection_matrix.md << 'EOF'
 - Reason: Must fit in small VRAM
 - Models: Qwen2.5-1.5B (6× GQA), small MQA models
 
+### 6. High Capacity / Multi-task (MoE)
+**Recommendation**: MoE + GQA
+- Reason: Large model capacity with efficient per-token compute
+- Models: Mixtral-8x7B (MoE + GQA), DeepSeek-V3 (MoE + MLA)
+- Note: Requires full model in VRAM despite sparse activation
+
+### 7. Streaming / Infinite Context
+**Recommendation**: GQA + SWA
+- Reason: Sliding window bounds memory regardless of total context
+- Models: Mistral-7B, Mistral-Large
+- Trade-off: Tokens outside window only connected through layer propagation
+
 ## Model Recommendations by GPU
 
-| GPU (VRAM) | MHA Models | GQA Models | Notes |
-|------------|------------|------------|-------|
-| 8GB | Small only | 1.5-3B GQA | Qwen2.5-1.5B ideal |
-| 16GB | 7B possible | 7-8B comfortable | Mistral-7B, Llama-3-8B |
-| 24GB | 7B easy | 13B possible | Higher concurrency |
-| 40GB+ | 13B easy | 70B possible | Production-scale |
+| GPU (VRAM) | MHA Models | GQA Models | MoE Models | Notes |
+|------------|------------|------------|------------|-------|
+| 8GB | Small only | Qwen2.5-1.5B, Llama-3.2-1B | - | Aggressive quant needed for 7B |
+| 16GB | 7B (low conc.) | Mistral-7B, Llama-3-8B | - | GQA enables 8+ concurrent |
+| 24GB | 7B (med conc.) | 7-8B (high conc.) | - | Llama-3.1-8B ideal |
+| 40GB (A100) | 13B | 70B (quantized) | - | Production single-GPU |
+| 80GB (H100) | 13B (high conc.) | 70B (native) | Mixtral-8x7B | Enterprise scale |
+| Multi-GPU | - | Llama-3.1-405B | DeepSeek-V3, Mixtral | Tensor parallelism required |
 
 ## Quick Reference Card
 
@@ -1112,6 +1289,213 @@ EOF
 
 ---
 
+## Bonus B4: Multi-GPU Tensor Parallelism (RunPod)
+
+**Objective**: Test if GQA benefits scale with tensor parallelism on large models.
+
+**Time**: 60 min | **Budget**: ~$3-5 (uses 2×A100)
+
+> **Note**: This is an advanced exercise requiring more GPU budget. Skip if budget-constrained.
+
+### B4.1 Create Tensor Parallel Benchmark Script
+
+```bash
+cat > scripts/runpod_tensor_parallel.py << 'EOF'
+#!/usr/bin/env python3
+"""
+RunPod Tensor Parallelism Benchmark: Test 70B models with TP=2.
+Measures throughput and cost-per-token for large GQA models.
+"""
+
+import argparse
+import asyncio
+import json
+import time
+from datetime import datetime
+from openai import AsyncOpenAI
+
+
+async def benchmark_70b(
+    endpoint_url: str,
+    api_key: str,
+    n_requests: int = 20,
+    max_tokens: int = 256,
+    model_name: str = "70B-Model"
+) -> dict:
+    """Benchmark large model with tensor parallelism."""
+
+    client = AsyncOpenAI(
+        base_url=f"{endpoint_url}/v1",
+        api_key=api_key,
+        timeout=180.0,  # Longer timeout for large models
+    )
+
+    prompts = [
+        f"Write a detailed explanation of topic {i} in machine learning, "
+        "covering theory, practical applications, and implementation details."
+        for i in range(n_requests)
+    ]
+
+    print(f"\n[{model_name}] Starting {n_requests} requests (TP=2)...")
+    print("Note: Large model - expect slower throughput but higher quality")
+
+    start_time = time.perf_counter()
+    total_tokens = 0
+
+    # Sequential for 70B to avoid overwhelming
+    for i, prompt in enumerate(prompts):
+        try:
+            response = await client.chat.completions.create(
+                model="default",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=0.7,
+            )
+            total_tokens += response.usage.completion_tokens
+            print(f"  Completed {i+1}/{n_requests} ({response.usage.completion_tokens} tokens)")
+        except Exception as e:
+            print(f"  Request {i+1} failed: {e}")
+
+    end_time = time.perf_counter()
+    wall_time = end_time - start_time
+
+    return {
+        "model_name": model_name,
+        "endpoint_url": endpoint_url,
+        "tensor_parallel": 2,
+        "n_requests": n_requests,
+        "max_tokens": max_tokens,
+        "total_output_tokens": total_tokens,
+        "wall_time_seconds": round(wall_time, 2),
+        "throughput_tok_s": round(total_tokens / wall_time, 2),
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+def calculate_tp_costs(result: dict, gpu_cost_per_hour: float, num_gpus: int = 2) -> dict:
+    """Calculate costs for multi-GPU setup."""
+    total_gpu_cost = gpu_cost_per_hour * num_gpus  # $/hour for all GPUs
+    gpu_seconds = result["wall_time_seconds"]
+
+    result["num_gpus"] = num_gpus
+    result["total_gpu_cost_per_hour"] = total_gpu_cost
+    result["gpu_cost_usd"] = round(gpu_seconds * (total_gpu_cost / 3600), 4)
+    result["cost_per_1k_tokens"] = round(
+        (result["gpu_cost_usd"] / result["total_output_tokens"]) * 1000, 6
+    ) if result["total_output_tokens"] > 0 else 0
+
+    return result
+
+
+async def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--endpoint", required=True, help="RunPod 70B endpoint URL")
+    parser.add_argument("--api-key", required=True, help="RunPod API key")
+    parser.add_argument("--name", default="Llama-3-70B", help="Model name")
+    parser.add_argument("--n-requests", type=int, default=20)
+    parser.add_argument("--max-tokens", type=int, default=256)
+    parser.add_argument("--gpu-cost", type=float, default=1.99, help="Per-GPU $/hour (A100)")
+    parser.add_argument("--num-gpus", type=int, default=2, help="Number of GPUs (TP degree)")
+    parser.add_argument("--output", type=str, default="reports/runpod_70b_benchmark.json")
+    args = parser.parse_args()
+
+    result = await benchmark_70b(
+        args.endpoint, args.api_key,
+        args.n_requests, args.max_tokens, args.name
+    )
+
+    result = calculate_tp_costs(result, args.gpu_cost, args.num_gpus)
+
+    # Print summary
+    print("\n" + "="*60)
+    print(f"70B Model Benchmark: {args.name}")
+    print("="*60)
+    print(f"Tensor Parallel Degree: {result['num_gpus']} GPUs")
+    print(f"Wall time: {result['wall_time_seconds']}s")
+    print(f"Total tokens: {result['total_output_tokens']}")
+    print(f"Throughput: {result['throughput_tok_s']} tok/s")
+    print(f"GPU cost: ${result['gpu_cost_usd']}")
+    print(f"Cost per 1K tokens: ${result['cost_per_1k_tokens']}")
+    print("="*60)
+
+    # Compare to theoretical 8B efficiency
+    # (Llama-3-8B on single A100 typically gets ~200-300 tok/s)
+    print("\nComparison to 8B model on single GPU:")
+    print(f"  70B throughput: {result['throughput_tok_s']} tok/s (2 GPUs)")
+    print(f"  8B typical: ~250 tok/s (1 GPU)")
+    print(f"  70B uses {2}× GPUs but has ~9× parameters")
+    print(f"  Cost efficiency: {result['cost_per_1k_tokens']*1000:.4f}$/M tokens")
+
+    with open(args.output, 'w') as f:
+        json.dump(result, f, indent=2)
+    print(f"\nResults saved to: {args.output}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+EOF
+
+chmod +x scripts/runpod_tensor_parallel.py
+```
+
+### B4.2 Deploy 70B Model on RunPod
+
+Deploy a 70B model with tensor parallelism on RunPod:
+
+1. **Model**: `meta-llama/Llama-3-70B-Instruct` or `Qwen/Qwen2.5-72B-Instruct`
+2. **GPU**: 2× A100-80GB (required for 70B at fp16)
+3. **vLLM settings**: `--tensor-parallel-size 2`
+
+### B4.3 Run the Benchmark
+
+```bash
+python scripts/runpod_tensor_parallel.py \
+    --endpoint "https://api.runpod.ai/v2/YOUR_70B_ENDPOINT_ID" \
+    --api-key "$RUNPOD_API_KEY" \
+    --name "Llama-3-70B-GQA8" \
+    --n-requests 20 \
+    --gpu-cost 1.99 \
+    --num-gpus 2
+```
+
+### Expected Results
+
+```
+============================================================
+70B Model Benchmark: Llama-3-70B-GQA8
+============================================================
+Tensor Parallel Degree: 2 GPUs
+Wall time: 180.5s
+Total tokens: 5120
+Throughput: 28.4 tok/s
+GPU cost: $0.1995
+Cost per 1K tokens: $0.038965
+============================================================
+
+Comparison to 8B model on single GPU:
+  70B throughput: 28.4 tok/s (2 GPUs)
+  8B typical: ~250 tok/s (1 GPU)
+  70B uses 2× GPUs but has ~9× parameters
+  Cost efficiency: 38.9650$/M tokens
+```
+
+### Key Insights
+
+| Model | Attention | GPUs | Throughput | $/1M tokens | Quality |
+|-------|-----------|------|------------|-------------|---------|
+| Llama-3-8B | GQA-4 | 1 | ~250 tok/s | ~$8 | Good |
+| Llama-3-70B | GQA-8 | 2 | ~28 tok/s | ~$39 | Excellent |
+
+**Takeaway**: 70B models cost ~5× more per token but offer qualitative improvements for complex tasks. GQA-8 makes 70B feasible on 2×A100 (would need 4+ GPUs without GQA).
+
+### Success Criteria
+- [ ] 70B model deployed with TP=2
+- [ ] Benchmark completed
+- [ ] Cost-per-token calculated
+- [ ] Comparison to 8B efficiency documented
+
+---
+
 ## Microtask 17: Production Checklist
 
 **Objective**: Create operational checklist for deploying models with different attention architectures.
@@ -1235,17 +1619,24 @@ cat > reports/day10_synthesis.md << 'EOF'
 - At 4K context, this means [X] GB savings for 7B model
 - At 32K context, GQA becomes **required**, not optional
 
-### 2. Measured Reality
+### 2. Advanced Patterns Beyond GQA
+- **Sliding Window Attention (SWA)**: Caps KV at window size (e.g., 4096) regardless of sequence length
+- **Multi-head Latent Attention (MLA)**: Compresses KV to ~5% of MHA (DeepSeek-V2/V3)
+- **MoE + GQA**: Sparse activation + efficient KV = high capacity with lower per-token cost
+
+### 3. Measured Reality
 - Theoretical predictions matched measured values within [X]%
 - GQA model served [X]× more concurrent users
 - Throughput improved by [X]% at high concurrency
 - Quality degradation was [minimal/noticeable/significant]
 
-### 3. Production Implications
+### 4. Production Implications
 - Model selection should start with attention architecture
 - GQA is the default choice for most production workloads
 - MHA only for quality-critical, low-concurrency use cases
 - MQA for extreme efficiency needs where quality can be sacrificed
+- SWA models (Mistral) ideal for long-context streaming use cases
+- MoE models need full VRAM but offer high capacity per compute dollar
 
 ## Connecting to Previous Days
 
@@ -1338,6 +1729,7 @@ EOF
 | 14. vLLM Source | ⬜ | Internals understood |
 | 15. Selection Matrix | ⬜ | Decision framework created |
 | 16. Long-Context | ⬜ | Scaling projections done |
+| B4. Multi-GPU TP | ⬜ | (Cloud) 70B model benchmarked |
 | 17. Production Checklist | ⬜ | Operational readiness verified |
 | 18. Synthesis | ⬜ | Day 10 complete |
 
@@ -1353,8 +1745,109 @@ reports/
 ├── selection_matrix.md
 ├── long_context_projection.md
 ├── production_checklist.md
-└── day10_synthesis.md
+├── day10_synthesis.md
+└── runpod_70b_benchmark.json    # RunPod: multi-GPU benchmark
+
+scripts/
+└── runpod_tensor_parallel.py    # RunPod: TP benchmark script
 ```
+
+---
+
+## Troubleshooting Measurement Issues
+
+### Common Problems and Solutions
+
+#### 1. CUDA Out of Memory (OOM)
+
+**Symptoms**: `torch.cuda.OutOfMemoryError` during model load or inference.
+
+**Causes & Fixes**:
+- **Model too large**: Use smaller model (Qwen2.5-1.5B) or reduce `--max-model-len`
+- **High concurrency**: Lower `--max-num-seqs` parameter
+- **Memory fragmentation**: Restart vLLM server between experiments
+- **Other processes**: Check `nvidia-smi` for competing GPU usage
+
+```bash
+# Clear CUDA memory between runs
+python -c "import torch; torch.cuda.empty_cache()"
+
+# Check what's using GPU
+nvidia-smi --query-compute-apps=pid,used_memory --format=csv
+```
+
+#### 2. Measured KV Cache Differs from Theory (>20%)
+
+**Causes**:
+- **Block allocation overhead**: vLLM allocates in blocks (default 16 tokens), causing step-function behavior
+- **vLLM version differences**: Memory management changed significantly between versions
+- **Warmup not complete**: First inference allocates additional buffers
+
+**Diagnosis**:
+```python
+# Check actual block size
+from vllm import LLM
+llm = LLM(model="...")
+print(f"Block size: {llm.llm_engine.cache_config.block_size}")
+print(f"Num GPU blocks: {llm.llm_engine.cache_config.num_gpu_blocks}")
+```
+
+#### 3. Throughput Lower Than Expected
+
+**Causes**:
+- **CPU bottleneck**: Tokenization or data loading limiting GPU utilization
+- **Small batch size**: Not saturating GPU compute
+- **Memory pressure**: KV cache evictions causing recomputation
+
+**Diagnosis**:
+```bash
+# Monitor GPU utilization during benchmark
+watch -n 0.5 nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv
+```
+
+**Fixes**:
+- Increase `--max-num-seqs` to batch more requests
+- Use longer prompts to amortize overhead
+- Check `--gpu-memory-utilization` isn't too low
+
+#### 4. Model Download Failures
+
+**Symptoms**: `OSError: Cannot download` or HuggingFace timeouts.
+
+**Fixes**:
+```bash
+# Pre-download models
+huggingface-cli download meta-llama/Llama-2-7b-hf
+
+# Use local cache
+export HF_HOME=~/.cache/huggingface
+export TRANSFORMERS_CACHE=~/.cache/huggingface/transformers
+
+# For gated models (Llama)
+huggingface-cli login
+```
+
+#### 5. vLLM API Errors
+
+**Common errors**:
+- `AttributeError: 'LLM' object has no attribute 'X'`: vLLM version mismatch
+- `ValueError: Model not supported`: Check vLLM model compatibility
+
+**Fixes**:
+```bash
+# Check vLLM version
+python -c "import vllm; print(vllm.__version__)"
+
+# Upgrade/downgrade if needed
+pip install vllm==0.5.0  # Use stable version from exercises
+```
+
+### When to Ask for Help
+
+If you've tried the above and still have issues:
+1. Check [vLLM GitHub Issues](https://github.com/vllm-project/vllm/issues)
+2. Include: vLLM version, GPU model, model ID, full error traceback
+3. Try minimal reproduction case before reporting
 
 ---
 

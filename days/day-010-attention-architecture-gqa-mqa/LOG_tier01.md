@@ -123,17 +123,19 @@ KV_bytes = 2 × n_kv_heads × d_head × seq_len × dtype_bytes
 
 ---
 
-## Architecture Comparison Table
+## Architecture Comparison Table (Comprehensive)
 
-| Model Family | Attention Type | n_heads | n_kv_heads | KV Reduction | Notes |
-|--------------|----------------|---------|------------|--------------|-------|
-| Llama-2-7B | GQA | 32 | 32 | 1× (full MHA) | Actually MHA despite GQA support |
-| Llama-2-70B | GQA | 64 | 8 | 8× | First major GQA deployment |
-| Llama-3-8B | GQA | 32 | 8 | 4× | GQA by default |
+> **Note**: See [Extended Table](#extended-architecture-comparison-table) below for additional models including Llama-3.1/3.2, Mixtral, DeepSeek.
+
+| Model | Attention | n_heads | n_kv_heads | KV Reduction | Special Features |
+|-------|-----------|---------|------------|--------------|------------------|
+| Llama-2-7B | MHA | 32 | 32 | 1× | Baseline MHA |
+| Llama-2-70B | GQA | 64 | 8 | 8× | First major GQA |
+| Llama-3-8B | GQA | 32 | 8 | 4× | Default GQA |
 | Llama-3-70B | GQA | 64 | 8 | 8× | |
-| Mistral-7B | GQA | 32 | 8 | 4× | + Sliding window attention |
-| Qwen2.5-7B | GQA | 28 | 4 | 7× | Aggressive KV reduction |
-| Falcon-7B | MQA | 71 | 1 | 71× | Original MQA model |
+| Mistral-7B | GQA | 32 | 8 | 4× | + SWA (4096 window) |
+| Qwen2.5-7B | GQA | 28 | 4 | 7× | Aggressive GQA |
+| Falcon-7B | MQA | 71 | 1 | 71× | Original MQA |
 | Falcon-40B | GQA | 128 | 8 | 16× | |
 
 ---
@@ -258,6 +260,135 @@ def max_concurrent_seqs(available_vram_bytes, kv_per_seq_bytes, safety_factor=0.
 
 ---
 
+## Advanced Attention Patterns
+
+### 4. Sliding Window Attention (SWA) + GQA
+
+Mistral-7B combines **GQA with Sliding Window Attention** for additional memory efficiency:
+
+```
+Standard Attention:  Each token attends to ALL previous tokens
+Sliding Window:      Each token attends to only last W tokens (e.g., W=4096)
+```
+
+**Why SWA matters for serving**:
+- KV cache is bounded by window size, not sequence length
+- Enables "infinite" context with constant memory
+- Combined with GQA: double memory savings
+
+**Mistral-7B architecture**:
+```
+- n_heads = 32, n_kv_heads = 8 (GQA-4)
+- sliding_window = 4096
+- KV cache capped at: 2 × 8 × 128 × 4096 × 32 layers × 2 bytes = 512 MB max
+  (regardless of actual sequence length!)
+```
+
+**Trade-off**: Tokens beyond the window cannot directly attend to each other; information must propagate through intermediate layers.
+
+---
+
+### 5. Multi-head Latent Attention (MLA)
+
+Introduced by DeepSeek-V2 (2024), MLA is more aggressive than MQA:
+
+```
+MHA:  Store full K, V per head
+GQA:  Share K, V across head groups
+MQA:  Single K, V for all heads
+MLA:  Compress K, V into low-rank latent space
+```
+
+**MLA mechanism**:
+```python
+# Traditional: Store K, V directly
+K = X @ W_k  # shape: [seq, d_model]
+
+# MLA: Store compressed latent
+latent = X @ W_compress  # shape: [seq, d_latent] where d_latent << d_model
+K = latent @ W_k_up      # Reconstruct K from latent during attention
+V = latent @ W_v_up      # Reconstruct V from latent
+```
+
+**DeepSeek-V2 stats**:
+- KV cache reduced to ~5.5% of standard MHA
+- 236B parameter model with competitive quality
+- Extreme memory efficiency for long contexts
+
+**Current support**: Limited in vLLM; DeepSeek-specific optimizations required.
+
+---
+
+### 6. GQA in Mixture-of-Experts (MoE) Models
+
+MoE models like **Mixtral-8x7B** combine GQA with sparse expert layers:
+
+```
+Standard Dense Model:  All parameters active for every token
+MoE Model:            Only top-K experts (e.g., 2 of 8) active per token
+```
+
+**Mixtral-8x7B architecture**:
+- 8 experts per layer, 2 active per token
+- Uses GQA (n_heads=32, n_kv_heads=8)
+- Total params: 46.7B, active params: ~12.9B per token
+
+**Serving implications**:
+- Memory: Must load ALL experts (full 46.7B)
+- Compute: Only ~12.9B activated per token
+- KV cache: GQA reduces cache size (same as non-MoE GQA)
+
+**Key insight**: MoE + GQA = memory-efficient inference with high capacity.
+
+---
+
+### 7. FlashAttention-2 and GQA
+
+FlashAttention-2 has native support for GQA, making it the preferred attention implementation:
+
+**How FlashAttention handles GQA**:
+```python
+# During attention computation:
+# Q: [batch, seq, n_heads, d_head]
+# K: [batch, seq, n_kv_heads, d_head]
+# V: [batch, seq, n_kv_heads, d_head]
+
+# FlashAttention internally broadcasts K, V to match Q heads
+# Memory-efficient: broadcasts on-the-fly, doesn't materialize full K, V
+```
+
+**Performance implications**:
+- GQA models benefit from FlashAttention's memory efficiency
+- Fused kernels avoid materializing expanded K, V
+- vLLM uses FlashAttention by default for all supported architectures
+
+---
+
+## Extended Architecture Comparison Table
+
+> **Full reference table** including recent models (2024). Bold = added since initial table.
+
+| Model | Attention | n_heads | n_kv_heads | KV Reduction | Special Features |
+|-------|-----------|---------|------------|--------------|------------------|
+| Llama-2-7B | MHA | 32 | 32 | 1× | Baseline MHA |
+| Llama-2-70B | GQA | 64 | 8 | 8× | First major GQA |
+| Llama-3-8B | GQA | 32 | 8 | 4× | Default GQA |
+| **Llama-3.1-8B** | GQA | 32 | 8 | 4× | 128K context |
+| **Llama-3.1-70B** | GQA | 64 | 8 | 8× | 128K context |
+| **Llama-3.2-3B** | GQA | 24 | 8 | 3× | Lightweight |
+| Mistral-7B | GQA | 32 | 8 | 4× | + SWA (4096) |
+| **Mistral-Large** | GQA | 96 | 8 | 12× | 123B params |
+| **Mixtral-8x7B** | GQA | 32 | 8 | 4× | MoE (8 experts) |
+| Qwen2.5-1.5B | GQA | 12 | 2 | 6× | Aggressive GQA |
+| Qwen2.5-7B | GQA | 28 | 4 | 7× | |
+| **Qwen2.5-72B** | GQA | 64 | 8 | 8× | 128K context |
+| Falcon-7B | MQA | 71 | 1 | 71× | Original MQA |
+| **Gemma-2-9B** | GQA | 16 | 8 | 2× | Interleaved local/global |
+| **DeepSeek-V2** | MLA | - | - | ~18× | Latent attention |
+| **DeepSeek-V3** | MLA | - | - | ~18× | 671B MoE |
+
+---
+
 ## Reading List
 
 ### Required (Before Labs)
@@ -269,9 +400,14 @@ def max_concurrent_seqs(available_vram_bytes, kv_per_seq_bytes, safety_factor=0.
 4. **Llama 3 Model Card** – GQA configuration details
 5. **vLLM Documentation: Model Support** – Which architectures are optimized
 
+### Advanced Attention Variants
+6. **"Mistral 7B"** (Jiang et al., 2023) – Sliding Window Attention + GQA combination
+7. **"DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts"** (2024) – Multi-head Latent Attention (MLA)
+8. **"Mixtral of Experts"** (Jiang et al., 2024) – MoE + GQA architecture
+
 ### Reference
-6. **"Attention Is All You Need"** (Vaswani et al., 2017) – Original MHA
-7. **FlashAttention-2** (Dao, 2023) – How attention is actually computed
+9. **"Attention Is All You Need"** (Vaswani et al., 2017) – Original MHA
+10. **FlashAttention-2** (Dao, 2023) – How attention is actually computed, GQA support
 
 ---
 
@@ -294,6 +430,15 @@ Before proceeding to Tier 2, you should be able to answer:
 5. **Why do newer models (Llama-3, Mistral) prefer GQA over MQA?**
    - Trade-off: GQA retains quality while still reducing memory significantly.
 
+6. **How does Sliding Window Attention (SWA) further reduce memory beyond GQA?**
+   - Answer: SWA caps KV cache at window size regardless of sequence length; combined with GQA = multiplicative savings.
+
+7. **Why does Mixtral-8x7B still need 90+ GB VRAM despite only ~13B active params?**
+   - Answer: All 8 experts must be loaded; only 2 are activated per token but all must be in memory.
+
+8. **What makes MLA (Multi-head Latent Attention) more aggressive than MQA?**
+   - Answer: MLA compresses K, V into a low-dimensional latent space (~5% of MHA), reconstructing on-the-fly during attention.
+
 ---
 
 ## Tier 1 Summary
@@ -303,6 +448,9 @@ Before proceeding to Tier 2, you should be able to answer:
 | **MHA** | Full KV per head; best quality, highest memory |
 | **GQA** | Shared KV across query groups; balance of quality/memory |
 | **MQA** | Single KV for all queries; minimum memory, quality risk |
+| **SWA** | KV cache bounded by window size; constant memory for "infinite" context |
+| **MLA** | Latent compression of K/V; ~5% of MHA memory, cutting-edge |
+| **MoE + GQA** | Sparse experts + efficient KV = high capacity with lower compute |
 | **KV Reduction** | `n_heads / n_kv_heads` factor |
 | **Serving Impact** | Lower KV → higher concurrency → better throughput |
 
