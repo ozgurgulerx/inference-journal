@@ -8,6 +8,8 @@
 
 Throughout this 100-day journey I’m also using **NotebookLM** and **OpenAI DeepResearch** extensively—to synthesize reading, design experiments, and pressure-test my own explanations as I go.
 
+> **Audit update:** Use the measurement-first daily log template in `days/planning/daily_log_template.md`. Days 011–019 have been added to close gaps (alternate runtimes, long-context vs RAG, speculative decoding, multi-GPU, multi-tenant QoS, cost accounting, reliability/guardrails, alignment, and MoE/SSM coverage).
+
 ## The 100-Day Plan
 
 | Phase | Days | Dates | Focus |
@@ -31,7 +33,18 @@ Throughout this 100-day journey I’m also using **NotebookLM** and **OpenAI Dee
 | [005](day-005-OS-and-NUMA-node-hardening/) | Dec 5 | OS & NUMA Node Hardening | ⏳ |
 | [006](day-006-slm-memory/) | Dec 6–7 | SLM + OS Memory & vLLM | ⏳ |
 | [007](day-007-vllm-runtime-probes/) | Dec 8 | vLLM SLM: TTFT, Prefix Caching, KV Scaling | ⏳ |
-| ... | | | |
+| [008](day-008-groq-dc-dimensioning/) | Dec 9 | Groq DC Dimensioning | ⏳ |
+| [009](day-009-latency-metrics-and-slo-lab/) | Dec 10 | Latency Metrics, KV Deep Dive & SLO Lab | ⏳ |
+| [010](day-010-attention-architecture-gqa-mqa/) | Dec 11 | Attention Variants (MHA/GQA/MQA) | ⏳ |
+| [011](day-011-runtime-shootout/) | Dec 12 | Alternate Runtimes & Scheduling | ⏳ |
+| [012](day-012-long-context-vs-rag/) | Dec 13 | Long-Context vs RAG | ⏳ |
+| [013](day-013-speculative-decoding/) | Dec 14 | Speculative Decoding Benchmark | ⏳ |
+| [014](day-014-multi-gpu-scaling/) | Dec 15 | Multi-GPU Scaling | ⏳ |
+| [015](day-015-multi-tenant-qos/) | Dec 16 | Multi-Tenant Load & QoS | ⏳ |
+| [016](day-016-cost-efficiency-accounting/) | Dec 17 | Cost & Efficiency Accounting | ⏳ |
+| [017](day-017-reliability-guardrails/) | Dec 18 | Reliability Drills & Guardrails | ⏳ |
+| [018](day-018-alignment-e2e-demo/) | Dec 19 | Alignment + Serving E2E | ⏳ |
+| [019](day-019-state-space-or-moe/) | Dec 20 | State-Space / MoE Hands-On | ⏳ |
 
 ---
 

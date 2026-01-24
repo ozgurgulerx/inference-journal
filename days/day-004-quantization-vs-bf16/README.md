@@ -13,6 +13,12 @@ You've measured BF16 capacity. Now measure **quantized capacity** on the same st
 
 ---
 
+## Audit Updates (2026 Expectations)
+
+- Add **output quality checks** on real tasks (code, long-form) for BF16 vs INT4/INT8, including any format errors.
+- Measure **concurrency impact** (chat + batch) so quant wins hold under load, not just single-stream.
+- Translate results into **$ per 1M tokens** and note where quantization fails or regresses behavior.
+
 ## Situational Recap
 
 | What You Have | From |

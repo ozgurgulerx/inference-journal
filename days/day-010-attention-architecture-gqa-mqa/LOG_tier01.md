@@ -26,6 +26,8 @@ This day teaches you to:
 2. Measure the actual impact on vLLM serving
 3. Make informed model selection decisions for production
 
+> **Audit note:** Pair these measurements with Day 019 (state-space/MoE) to cover 2026-era architectures, and log cost/quality deltas using the measurement-first template.
+
 ---
 
 ## Core Concepts

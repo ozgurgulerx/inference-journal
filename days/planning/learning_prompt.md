@@ -29,6 +29,8 @@ Each day:
 4. Paste the filled template as a **user message**.
 5. The assistant should reply with a **3-tier lab plan** for today.
 
+> **Reminder:** All daily plans should map back to the measurement-first journal format in `days/planning/daily_log_template.md`, with explicit metrics, $/token math, quality/behavior checks, and reliability/guardrail notes.
+
 ---
 
 ## Section 1: Static Meta-Prompt (Paste as System Prompt)
@@ -150,6 +152,7 @@ Over the 100 days, ensure we:
 
 * Rotate through the **5 layers** and **10 themes**.
 * Avoid getting stuck only on runtimes or only on model training.
+* Explicitly schedule the audit gaps: alternate runtimes & scheduling, long-context vs RAG, speculative decoding, multi-GPU scale, multi-tenant QoS, cost-per-token accounting, reliability/guardrails drills, MoE/SSM exposure, and an end-to-end alignment + serving demo (with quality checks baked into quantization/long-context work).
 
 When you respond for a given day:
 

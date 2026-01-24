@@ -30,6 +30,7 @@
 - [Phase 3: Optimization](#phase-3--optimization-days-5680) (Days 56-80)
 - [Phase 4: Ship & Share](#phase-4--ship--share-days-81100) (Days 81-100)
 - [Advanced Tracks](#advanced-mastery-tracks) (Post-100)
+- [Audit-Driven Priority Injections](#audit-driven-priority-injections-days-11-18)
 
 ---
 
@@ -85,6 +86,24 @@ Over these 100 days, “inference engineering” will explicitly cover:
 - **Training side needed for consulting**  
   - practical SFT/LoRA pipelines that can be deployed behind vLLM/TRT-LLM  
   - **one concrete institutional alignment loop** (DPO/GRPO or similar) built from logs/preferences and wired back into your serving stack, and how alignment changes serving capacity, latency, and cost
+
+---
+
+## Audit-Driven Priority Injections (Days 11–18)
+
+To close the gaps identified in the audit, dedicate the next block of days to these topics. Each one must produce metrics, cost math, and a short quality/safety note using the measurement-first template.
+
+| Day | Focus | Why |
+|-----|-------|-----|
+| 011 | Alternate runtimes & scheduling shootout (vLLM vs TensorRT-LLM/TGI/Triton) | Runtime diversity + scheduler knobs |
+| 012 | Long-context vs RAG comparison (16k–32k) | Decide context vs retrieval with data |
+| 013 | Speculative decoding benchmark (draft vs target) | Now-standard decoding acceleration |
+| 014 | Multi-GPU scaling (data vs tensor parallel) | Scale-up/scale-out trade-offs |
+| 015 | Multi-tenant load & QoS (priorities/MIG) | Isolation, fairness, tail p95/p99 |
+| 016 | Cost & efficiency accounting | $/token, per-tenant cost tracing |
+| 017 | Reliability drills + guardrails | Failure behavior + safety overhead |
+| 018 | Alignment + serving E2E demo (LoRA/DPO) | Behavior change + serving impact |
+| 019 | MoE / state-space model hands-on | Architecture breadth beyond transformers |
 
 ---
 
@@ -413,4 +432,3 @@ What slowed me down.
 ## Tomorrow
 What's next.
 ```
-

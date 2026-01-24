@@ -6,6 +6,10 @@ Over these 100 days, “inference engineering” is explicitly tied to the curre
   - Practice: vLLM PagedAttention, FlashAttention, long-context configs; measuring latency/memory vs context length; understanding when to prefer RAG vs brute-force context.  
   - Goal: be able to design and defend a long-context strategy (pure context, RAG, or hybrid) for an enterprise workload.
 
+- **Runtime Diversity & Scheduling**  
+  - Practice: run the same workload on vLLM, TensorRT-LLM, Triton/TGI (or vendor endpoints); tune continuous vs static batching knobs and note scheduler behavior.  
+  - Goal: pick the right runtime per workload with quantified latency/throughput/$ trade-offs.
+
 - **Continuous Batching & Smart Scheduling**  
   - Practice: vLLM continuous batching, concurrency grids, TTFT/E2E under load; simple QoS/backpressure gateway; basic multi-tenant policies.  
   - Goal: choose batch/concurrency configs that maximize tokens/sec per dollar without blowing p95/p99.

@@ -15,6 +15,11 @@ By March 10, 2026, you will have:
   - impact on output quality for at least one real task,
   - and the “where it breaks” edge cases (code, long context, safety).
 
+- [ ] A **cost-aware benchmarking habit** baked into every major experiment:
+  - tokens/sec translated to **$ per 1M tokens** using realistic GPU pricing,
+  - per-request and per-tenant cost/utilization tracing where possible,
+  - dashboard snippets or lightweight logs that tie performance changes to dollars.
+
 - [ ] A clear mental model and tuning experience for **KV cache design & management**:
   - max_model_len, max_num_seqs, block/page size, gpu_memory_utilization,
   - prefix caching and cross-request reuse,
@@ -31,6 +36,16 @@ By March 10, 2026, you will have:
   - a small preference or reward dataset built from those logs or realistic synthetic data,
   - a tuned variant of a base model,
   - and before/after evaluation of both **behavior** (policy/style/adherence) and **serving impact** (latency, throughput, cost).
+
+- [ ] Measured comparisons of **long-context vs RAG** and **speculative decoding**:
+  - latency, memory, and quality across 4k → 32k contexts,
+  - RAG vs long-context trade-offs for latency/cost/quality,
+  - speculative decoding speedups and rejection rates under load (draft vs target).
+
+- [ ] Multi-tenant QoS and reliability drills captured as reusable playbooks:
+  - p95/p99 isolation under mixed chat + batch workloads,
+  - simple policies (priority queues, MIG splits, rate limits) with before/after numbers,
+  - failure drills (OOM, timeout, node down) plus guardrail overhead measurements.
 
 - [ ] 3+ repos with **real numbers and configs**:
   - serving benchmarks (latency/throughput/kv-usage) across models/runtimes/precisions,

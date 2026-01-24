@@ -11,6 +11,8 @@
 - **Theme**: KV cache design, partitioning & cross-request reuse (Theme #3)
 - **Outcome**: Concrete SLO + admission policy backed by measured data
 
+> **Audit addendum:** Extend this day to log **$ per 1M tokens** and **per-tenant latency/cost** from the same runs. Capture p95/p99 for mixed workloads, and note any guardrail or prefix-cache effects on quality/behavior. Use the measurement-first template for new additions.
+
 ---
 
 ## A) Assumptions
