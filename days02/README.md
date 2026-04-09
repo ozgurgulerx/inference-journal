@@ -6,6 +6,72 @@
 
 The goal of this track is simple: explain every latency, throughput, memory, and cost shift from first principles. That means being able to connect model behavior, kernels, compilers, runtimes, topology, networking, and service policy into one coherent picture.
 
+## Research Strategy
+
+Use the Baseten book as the skeleton map for the field, but do not research every section with the same depth. The rule is simple:
+
+- Go deep where the tradeoffs are non-obvious and still evolving.
+- Stay at survey level where the real job is orientation, not invention.
+
+## Research Depth by Section
+
+### Deep Research Sections
+
+- Model mechanics and bottlenecks
+- CUDA and profiling
+- Compiler and kernel path
+- Inference engines
+- Optimization techniques
+- Distributed and networking
+- Production platform
+- Observability and SRE
+
+### Medium Research Sections
+
+- Prerequisites, evals, and economics
+- Hardware and topology overview
+- Modalities survey
+
+### Light or Reference Sections
+
+- Local inference
+- Vendor landscape and procurement details
+- Niche modalities until later
+
+## Macro Milestones
+
+### M1 - Workload Thinker
+
+You can define SLOs, evals, cost targets, and model fit.
+
+### M2 - Single-Node Diagnostician
+
+You can profile a model on one GPU or one node and identify the real bottleneck.
+
+### M3 - Engine Operator
+
+You can tune vLLM, SGLang, and TensorRT-LLM and explain why they differ.
+
+### M4 - Distributed Inference Engineer
+
+You can scale across GPUs and nodes and reason about topology, cache, and scheduler behavior.
+
+### M5 - Production Inference Engineer
+
+You can run the service with autoscaling, observability, reliability, and controlled deploys.
+
+### M6 - Top-1%-Trajectory Builder
+
+You have public artifacts that show original measurement, not just summaries.
+
+## Overall Verdict
+
+This map is now comprehensive enough once the prerequisite and production layers are made explicit and the Baseten book is used as the skeleton map. The key constraint is not completeness of topics anymore; it is depth allocation. Deep research should follow section priority, not a mechanical "treat everything equally" rule.
+
+## Next Build Step
+
+The next useful move is to turn this into a staged 12-16 week research and build sequence with exact weekly deliverables.
+
 ## Section 1 - Transformer Inference Mechanics
 
 This needs to be explicit, not implied. A strong inference engineer should be able to reason cleanly about how work changes between prefill and decode, why KV-cache behavior dominates so many tradeoffs, and how prompt reuse, long context, and architecture choices reshape runtime behavior.
