@@ -1,21 +1,21 @@
-# 01 - Prereqs, Evals, and Economics
+# 01 - Prerequisites, Evals, and Economics
 
 ## Scope
 
-- Establish the baseline environment and benchmark discipline.
-- Define what "good" means before optimizing anything.
-- Track cost, throughput, and evaluation tradeoffs together.
+- Define target workloads before optimizing anything.
+- Set latency, quality, reliability, and unit-economics targets up front.
+- Turn model and hardware choices into workload-constrained decisions.
 
 ## Notes
 
-Use `notes/` for evaluation philosophy, workload definitions, pricing assumptions, and benchmark rules.
+Use `notes/` for workload definitions, eval philosophy, pricing assumptions, latency budgets, and model-fit memos.
 
 ## Experiments
 
-Use `experiments/` for baseline runs, cost sheets, and repeatable eval harness outputs.
+Use `experiments/` for baseline runs, prompt and output distribution analysis, cost sheets, and repeatable eval harness outputs.
 
 ## Exit Criteria
 
-- A baseline workload is fixed.
-- Core metrics are defined.
-- A simple cost-per-token model exists.
+- Interactive and batch workloads are explicitly defined.
+- TTFT, ITL, SLO, and cost targets are fixed.
+- A one-page decision memo exists for model, engine, and hardware fit.
